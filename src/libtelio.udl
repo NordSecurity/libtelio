@@ -759,6 +759,10 @@ dictionary ConnectionConfig {
     boolean post_quantum;
     /// Ciphers supported by the VPN server (NepTUN only). Null for meshnet.
     sequence<Cipher>? supported_ciphers;
+    /// Override the default PQ upgrader IP used for post-quantum key exchange.
+    /// When null, the default 10.5.0.1 is used.
+    /// Only meaningful for VPN connections with post-quantum enabled.
+    Ipv4Addr? pq_upgrader_ip;
 };
 
 /// Builder for VPN exit-node connections where a direct UDP endpoint is known.
@@ -797,6 +801,11 @@ interface VpnConnectionConfigBuilder {
     /// The order of ciphers does not matter for preference negotiation.
     [Self=ByArc]
     VpnConnectionConfigBuilder with_ciphers(sequence<Cipher> ciphers);
+
+    /// Override the default PQ Upgrader IP (10.5.0.1) used for post-quantum key exchange.
+    /// Has no effect unless post-quantum is enabled via force_pq().
+    [Self=ByArc]
+    VpnConnectionConfigBuilder with_custom_pq_upgrader_ip(Ipv4Addr ip);
 
     /// Build the final ConnectionConfig.
     ConnectionConfig build();

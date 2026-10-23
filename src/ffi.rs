@@ -756,7 +756,7 @@ impl Telio {
     ///   or [`connection_config::MeshnetConnectionConfigBuilder`].
     pub fn connect_to_exit_node_with_config(&self, config: ConnectionConfig) -> FfiResult<()> {
         telio_log_info!(
-            "Telio::connect_to_exit_node_with_config entry with instance id :{}. Identifier: {:?}, Public Key: {:?}. Allowed IPs: {:?}. Endpoint: {:?}. PostQuantum: {:?}. Ciphers: {:?}.",
+            "Telio::connect_to_exit_node_with_config entry with instance id :{}. Identifier: {:?}, Public Key: {:?}. Allowed IPs: {:?}. Endpoint: {:?}. PostQuantum: {:?}. Ciphers: {:?}. Custom PQ upgrader IP: {:?}.",
             self.id,
             config.identifier,
             config.public_key,
@@ -764,6 +764,7 @@ impl Telio {
             config.endpoint,
             config.post_quantum,
             config.supported_ciphers,
+            config.pq_upgrader_ip,
         );
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
