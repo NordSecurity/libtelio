@@ -62,7 +62,11 @@ pub enum Error {
 
     /// Invalid DNS name
     #[error("Invalid DNS name: {0}")]
-    InvalidDnsName(#[from] hickory_server::proto::error::ProtoError),
+    InvalidDnsName(#[from] hickory_server::proto::ProtoError),
+
+    /// Failed to build the forwarding resolver
+    #[error("Failed to build DNS resolver: {0}")]
+    BuildResolver(#[from] hickory_server::net::NetError),
 
     /// Record does not belong to the specified DNS zone
     #[error("Record '{0}' does not belong to zone '{1}'")]
