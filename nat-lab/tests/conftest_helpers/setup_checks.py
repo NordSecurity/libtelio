@@ -8,7 +8,6 @@ from itertools import combinations
 from tests.config import LAN_ADDR_MAP
 from tests.interderp_cli import InterDerpClient
 from tests.utils.connection import ConnectionTag, TargetOS
-from tests.utils.connection.docker_connection import DockerConnection
 from tests.utils.connection_util import (
     new_connection_raw,
     is_running,
@@ -60,28 +59,16 @@ SESSION_MARK_TO_CONTAINERS = {
 
 async def setup_check_interderp():
     setup_log.info("Running interderp checks..")
-    async with AsyncExitStack() as exit_stack:
-        connections = [
-            await exit_stack.enter_async_context(new_connection_raw(conn_tag))
-            for conn_tag in [
-                ConnectionTag.DOCKER_CONE_CLIENT_1,
-                ConnectionTag.DOCKER_DERP_1,
-                ConnectionTag.DOCKER_DERP_2,
-                ConnectionTag.DOCKER_DERP_3,
-            ]
-        ]
-
-        if not isinstance(connections[0], DockerConnection):
-            raise RuntimeError("Not docker connection")
-
-        async with make_tcpdump(connections):
+    async with new_connection_raw(ConnectionTag.DOCKER_CONE_CLIENT_1) as client:
+        # Packet capture on DERP servers is performed session-wide
+        async with make_tcpdump([client]):
             for idx, (server1, server2) in enumerate(
                 combinations(
                     [DERP_SERVER_1_ADDR, DERP_SERVER_2_ADDR, DERP_SERVER_3_ADDR], 2
                 )
             ):
                 derp_test = InterDerpClient(
-                    connections[0],
+                    client,
                     server1,
                     server2,
                     DERP_SERVER_1_SECRET_KEY,
