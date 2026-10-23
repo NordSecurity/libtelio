@@ -40,9 +40,9 @@ use telio_utils::{format_hex, telio_log_debug, telio_log_error, telio_log_trace,
 use thiserror::Error;
 
 const IPV4_HEADER: usize = 20; // bytes
-const IPV6_HEADER: usize = 40; // bytes
-const MAX_PACKET: usize = 2048;
-const UDP_HEADER: usize = 8;
+pub(crate) const IPV6_HEADER: usize = 40; // bytes
+pub(crate) const MAX_PACKET: usize = 2048;
+pub(crate) const UDP_HEADER: usize = 8;
 const TCP_MIN_HEADER: usize = 20;
 const MAX_CONCURRENT_QUERIES: usize = 256;
 const IDLE_TIME: Duration = Duration::from_secs(1);

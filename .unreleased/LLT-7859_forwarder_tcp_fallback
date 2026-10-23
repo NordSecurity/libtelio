@@ -1,0 +1,1 @@
+Raw DNS forwarder falls back to TCP on truncated responses, answering the client over UDP
