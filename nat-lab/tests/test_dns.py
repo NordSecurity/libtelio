@@ -1221,15 +1221,16 @@ async def test_dns_no_error_return_code(use_raw_forwarder: bool) -> None:
 
 
 @pytest.mark.asyncio
-async def test_dns_upstream_tcp_fallback() -> None:
+@pytest.mark.parametrize("use_raw_forwarder", DNS_FORWARDER_PARAMS)
+async def test_dns_upstream_tcp_fallback(use_raw_forwarder: bool) -> None:
     async with AsyncExitStack() as exit_stack:
         TRUNCATED_FLAG = r";; flags:[^;]*\btc\b"
         TCP_ONLY_RECORD = r'"tcp-only-a+" "b{255}" "c{100}"'
 
         _, connection_alpha = await setup_forwarder_test_node(
             exit_stack,
-            use_raw_forwarder=False,
-            forward_servers=[DNS_SERVER_1_IP],
+            use_raw_forwarder,
+            [DNS_SERVER_1_IP],
         )
 
         # Control check
