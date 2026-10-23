@@ -111,7 +111,7 @@ async fn connect_with_deadline(addr: SocketAddr, deadline: Instant) -> Option<Tc
 }
 
 /// Connect to the upstream resolver, bound to the tunnel interface.
-async fn connect_upstream(addr: SocketAddr) -> std::io::Result<TcpStream> {
+pub(crate) async fn connect_upstream(addr: SocketAddr) -> std::io::Result<TcpStream> {
     let socket = match addr {
         SocketAddr::V4(_) => tokio::net::TcpSocket::new_v4()?,
         SocketAddr::V6(_) => tokio::net::TcpSocket::new_v6()?,
