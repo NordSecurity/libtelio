@@ -44,6 +44,9 @@ const IPV6_HEADER: usize = 40; // bytes
 const MAX_PACKET: usize = 2048;
 const UDP_HEADER: usize = 8;
 const TCP_MIN_HEADER: usize = 20;
+/// Largest TCP fallback answer returned over UDP
+/// POC: what fits in one tunnel packet. Later: the client's EDNS UDP size.
+pub(crate) const TCP_FALLBACK_MAX_RESPONSE: usize = MAX_PACKET - IPV6_HEADER - UDP_HEADER;
 const MAX_CONCURRENT_QUERIES: usize = 256;
 const IDLE_TIME: Duration = Duration::from_secs(1);
 
