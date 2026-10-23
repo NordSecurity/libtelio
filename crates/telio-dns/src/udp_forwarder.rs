@@ -6,15 +6,17 @@
 //! Upstream resolvers are tried in order they are set.
 //! If no response is received after the set timeout, the next
 //! upstream resolver is tried.
+//! A truncated response is retried over TCP against the same upstream
 
 use crate::{
     bind_tun::bind_to_tun,
     error::ForwardError,
     packet_encoder::DNS_HEADER_OFFSET,
+    tcp_fallback::tcp_fallback,
     upstream::{UpstreamCursor, UpstreamList},
 };
 use rand::RngExt;
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use telio_utils::{sleep_until, telio_log_debug, telio_log_warn, Instant};
 use tokio::{
     net::UdpSocket,
@@ -27,6 +29,8 @@ const FORWARDER_BUFFER_SIZE: usize = 4096;
 const CHANNEL_SIZE: usize = 256;
 /// Maximum number of DNS IDs
 const DNS_ID_SPACE: u32 = 65536;
+/// Truncated flag
+const TC_FLAG: u8 = 0x02;
 
 /// Send a result through the response channel
 macro_rules! send_channel_response {
@@ -46,12 +50,30 @@ pub(crate) struct UdpForwarder {
     tx: mpsc::Sender<ForwardQuery>,
 }
 
+/// Upstream reply delivered by the forwarder loop to the caller
+enum UpstreamReply {
+    /// Response to return to the client as is
+    Answer(Vec<u8>),
+    /// Response with TC set, to be retried over TCP by the caller
+    Truncated {
+        /// Truncated response with the original ID restored
+        reply: Vec<u8>,
+        /// Upstream that sent the truncated response
+        upstream: SocketAddr,
+        /// Deadline of the UDP attempt, also bounding the TCP retry
+        deadline: Instant,
+    },
+}
+
+/// Channel end the forwarder loop answers a query on
+type ReplySender = oneshot::Sender<Result<UpstreamReply, ForwardError>>;
+
 /// Internal message for forwarding a DNS query
 struct ForwardQuery {
     /// Raw DNS packet bytes to forward
     query_bytes: Vec<u8>,
     /// Channel to send the response back to the caller
-    respond_to: oneshot::Sender<Result<Vec<u8>, ForwardError>>,
+    respond_to: ReplySender,
 }
 
 /// In progress DNS query awaiting an upstream response
@@ -63,13 +85,13 @@ struct PendingQuery {
     /// Failover cursor over the upstream list
     upstream_cursor: UpstreamCursor,
     /// Channel to send the response back to the caller
-    respond_to: oneshot::Sender<Result<Vec<u8>, ForwardError>>,
+    respond_to: ReplySender,
     /// Instant when request times out
     deadline: Instant,
 }
 
 /// Extract the 16-bit transaction ID of a DNS packet
-fn get_dns_id(packet: &[u8]) -> Result<u16, ForwardError> {
+pub(crate) fn get_dns_id(packet: &[u8]) -> Result<u16, ForwardError> {
     if packet.len() < DNS_HEADER_OFFSET {
         return Err(ForwardError::PacketTooShort);
     }
@@ -77,6 +99,11 @@ fn get_dns_id(packet: &[u8]) -> Result<u16, ForwardError> {
     // This is ok because the size is checked above
     #[allow(clippy::indexing_slicing)]
     Ok(u16::from_be_bytes([packet[0], packet[1]]))
+}
+
+/// True if the TC flag is set in the DNS header
+pub(crate) fn is_truncated(packet: &[u8]) -> bool {
+    packet.get(2).is_some_and(|flags| flags & TC_FLAG != 0)
 }
 
 /// Overwrite the 16-bit transaction ID of a DNS packet
@@ -137,7 +164,14 @@ impl UdpForwarder {
             .await
             .map_err(|_| ForwardError::ChannelClosed)?;
 
-        recv.await.map_err(|_| ForwardError::ChannelClosed)?
+        match recv.await.map_err(|_| ForwardError::ChannelClosed)?? {
+            UpstreamReply::Answer(response) => Ok(response),
+            UpstreamReply::Truncated {
+                reply,
+                upstream,
+                deadline,
+            } => Ok(tcp_fallback(upstream, request, deadline, reply).await),
+        }
     }
 
     /// Main async loop that forwards incoming requests
@@ -191,7 +225,7 @@ impl UdpForwarder {
 
                             match recv_buf.get_mut(..n) {
                                 Some(response_bytes) => {
-                                    Self::handle_response(response_bytes, &mut pending);
+                                    Self::handle_response(response_bytes, src, &mut pending);
                                 }
                                 None =>  {
                                     telio_log_debug!("Failed to receive from upstream resolver, size overflow: {n}");
@@ -295,7 +329,11 @@ impl UdpForwarder {
     }
 
     /// Match an upstream response to a pending query and deliver the result
-    fn handle_response(response_bytes: &mut [u8], pending: &mut HashMap<u16, PendingQuery>) {
+    fn handle_response(
+        response_bytes: &mut [u8],
+        src: SocketAddr,
+        pending: &mut HashMap<u16, PendingQuery>,
+    ) {
         let internal_id = match get_dns_id(response_bytes) {
             Ok(id) => id,
             Err(e) => {
@@ -322,7 +360,17 @@ impl UdpForwarder {
             return;
         }
 
-        send_channel_response!(entry.respond_to, Ok(response_bytes.to_vec()));
+        let reply = if is_truncated(response_bytes) {
+            telio_log_debug!("Truncated response for request: {internal_id}, retrying over TCP");
+            UpstreamReply::Truncated {
+                reply: response_bytes.to_vec(),
+                upstream: src,
+                deadline: entry.deadline,
+            }
+        } else {
+            UpstreamReply::Answer(response_bytes.to_vec())
+        };
+        send_channel_response!(entry.respond_to, Ok(reply));
     }
 
     /// Handle expired queries
@@ -391,34 +439,46 @@ impl UdpForwarder {
 }
 
 #[cfg(test)]
-mod tests {
-    use crate::nameserver::QUERY_TIMEOUT;
-
+pub(crate) mod tests {
     use super::*;
-    use std::net::SocketAddr;
+    use crate::{
+        nameserver::QUERY_TIMEOUT,
+        tcp_fallback::tests::{frame, spawn_tcp_stub, TcpStubBehavior},
+    };
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
     use tokio::task::JoinHandle;
 
-    const TEST_PACKET_ID: u16 = 0x1234;
-    const TEST_DNS_PAYLOAD: &[u8; 13] = b"query-payload";
+    pub(crate) const TEST_PACKET_ID: u16 = 0x1234;
+    pub(crate) const TEST_DNS_PAYLOAD: &[u8; 13] = b"query-payload";
     // Timeout value used for BlackHole tests
-    const BLACKHOLE_QUERY_TIMEOUT: Duration = Duration::from_millis(50);
+    pub(crate) const BLACKHOLE_QUERY_TIMEOUT: Duration = Duration::from_millis(50);
 
-    fn make_dns_packet(id: u16, payload: &[u8]) -> Vec<u8> {
+    pub(crate) fn make_dns_packet(id: u16, payload: &[u8]) -> Vec<u8> {
         let mut packet = id.to_be_bytes().to_vec();
         packet.extend_from_slice(payload);
         packet
     }
 
+    pub(crate) fn set_tc(packet: &mut [u8]) {
+        packet[2] |= 0x02;
+    }
+
     enum StubBehavior {
         Echo,
+        /// Echo with the TC flag set
+        EchoTruncated,
         BlackHole,
     }
 
     async fn spawn_stub(behavior: StubBehavior) -> (SocketAddr, JoinHandle<Vec<u8>>) {
         let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let addr = socket.local_addr().unwrap();
+        (addr, spawn_stub_on(socket, behavior))
+    }
 
-        let handle = tokio::spawn(async move {
+    fn spawn_stub_on(socket: UdpSocket, behavior: StubBehavior) -> JoinHandle<Vec<u8>> {
+        tokio::spawn(async move {
             let mut buf = vec![0u8; 4096];
             let (n, src) = socket.recv_from(&mut buf).await.unwrap();
             let received = buf[..n].to_vec();
@@ -427,12 +487,60 @@ mod tests {
                 StubBehavior::Echo => {
                     socket.send_to(&received, src).await.unwrap();
                 }
+                StubBehavior::EchoTruncated => {
+                    let mut reply = received.clone();
+                    set_tc(&mut reply);
+                    socket.send_to(&reply, src).await.unwrap();
+                }
                 StubBehavior::BlackHole => {}
             }
             received
-        });
+        })
+    }
 
-        (addr, handle)
+    /// UDP and TCP stubs sharing one 127.0.0.1 port
+    async fn spawn_udp_tcp_stub(
+        udp: StubBehavior,
+        tcp: TcpStubBehavior,
+    ) -> (SocketAddr, JoinHandle<Vec<u8>>, JoinHandle<Vec<u8>>) {
+        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let addr = socket.local_addr().unwrap();
+        let listener = TcpListener::bind(addr).await.unwrap();
+        (
+            addr,
+            spawn_stub_on(socket, udp),
+            spawn_tcp_stub(listener, tcp),
+        )
+    }
+
+    /// UDP answers `count` queries with TC set, TCP echoes `count` frames unchanged
+    async fn spawn_multi_udp_tcp_stub(count: usize) -> SocketAddr {
+        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let addr = socket.local_addr().unwrap();
+        let listener = TcpListener::bind(addr).await.unwrap();
+
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 4096];
+            for _ in 0..count {
+                let (n, src) = socket.recv_from(&mut buf).await.unwrap();
+                let mut reply = buf[..n].to_vec();
+                set_tc(&mut reply);
+                socket.send_to(&reply, src).await.unwrap();
+            }
+        });
+        tokio::spawn(async move {
+            for _ in 0..count {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                tokio::spawn(async move {
+                    let mut prefix = [0u8; 2];
+                    stream.read_exact(&mut prefix).await.unwrap();
+                    let mut query = vec![0u8; usize::from(u16::from_be_bytes(prefix))];
+                    stream.read_exact(&mut query).await.unwrap();
+                    stream.write_all(&frame(&query)).await.unwrap();
+                });
+            }
+        });
+        addr
     }
 
     async fn spawn_multi_stub(count: usize) -> (SocketAddr, JoinHandle<Vec<Vec<u8>>>) {
@@ -477,6 +585,22 @@ mod tests {
             respond_to: oneshot::channel().0,
             deadline: Instant::now(),
         }
+    }
+
+    #[test]
+    fn is_truncated_detects_tc_flag() {
+        let mut packet = vec![0u8; DNS_HEADER_OFFSET];
+        assert!(!is_truncated(&packet));
+        packet[2] = 0x02;
+        assert!(is_truncated(&packet));
+        packet[2] = 0xFD;
+        assert!(!is_truncated(&packet), "every bit but TC");
+    }
+
+    #[test]
+    fn is_truncated_short_packet_is_not_truncated() {
+        assert!(!is_truncated(&[]));
+        assert!(!is_truncated(&[0x12, 0x34]));
     }
 
     #[test]
@@ -603,7 +727,7 @@ mod tests {
 
     #[tokio::test]
     async fn forward_query_passes_through_large_response() {
-        let large_payload = vec![0xAB; FORWARDER_BUFFER_SIZE - 3];
+        let large_payload = vec![0xA9; FORWARDER_BUFFER_SIZE - 3];
         let (addr, _handle) = spawn_stub(StubBehavior::Echo).await;
 
         let (forwarder, _upstreams) = new_forwarder(vec![addr]).await;
@@ -613,6 +737,137 @@ mod tests {
 
         assert_eq!(get_dns_id(&result).unwrap(), TEST_PACKET_ID);
         assert_eq!(&result[2..], &large_payload[..]);
+    }
+
+    #[tokio::test]
+    async fn truncated_udp_reply_is_retried_over_tcp() {
+        let (addr, _udp, _tcp) = spawn_udp_tcp_stub(
+            StubBehavior::EchoTruncated,
+            TcpStubBehavior::Echo { pad_to: 1500 },
+        )
+        .await;
+        let (forwarder, _upstreams) = new_forwarder(vec![addr]).await;
+
+        let request = make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD);
+        let result = forwarder.query(&request).await.unwrap();
+
+        assert_eq!(result.len(), 1500);
+        assert_eq!(get_dns_id(&result).unwrap(), TEST_PACKET_ID);
+        assert!(!is_truncated(&result));
+    }
+
+    #[tokio::test]
+    async fn truncated_udp_reply_returned_when_tcp_unavailable() {
+        let (addr, _udp) = spawn_stub(StubBehavior::EchoTruncated).await;
+        let (forwarder, _upstreams) = new_forwarder(vec![addr]).await;
+
+        let request = make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD);
+        let result = forwarder.query(&request).await.unwrap();
+
+        let mut expected = request;
+        set_tc(&mut expected);
+        assert_eq!(result, expected);
+    }
+
+    #[tokio::test]
+    async fn tcp_fallback_stays_within_udp_window() {
+        let (addr, _udp, _tcp) =
+            spawn_udp_tcp_stub(StubBehavior::EchoTruncated, TcpStubBehavior::Stall).await;
+        let (forwarder, _upstreams) =
+            new_forwarder_with_timeout(vec![addr], BLACKHOLE_QUERY_TIMEOUT).await;
+        let start = Instant::now();
+
+        let request = make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD);
+        let result = forwarder.query(&request).await.unwrap();
+
+        let elapsed = Instant::now().duration_since(start);
+        assert!(is_truncated(&result));
+        assert!(
+            elapsed < BLACKHOLE_QUERY_TIMEOUT + Duration::from_millis(500),
+            "{:?}",
+            elapsed
+        );
+    }
+
+    #[tokio::test]
+    async fn untruncated_reply_does_not_open_tcp() {
+        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let addr = socket.local_addr().unwrap();
+        let listener = TcpListener::bind(addr).await.unwrap();
+        let _udp = spawn_stub_on(socket, StubBehavior::Echo);
+        let (forwarder, _upstreams) = new_forwarder(vec![addr]).await;
+
+        let request = make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD);
+        let result = forwarder.query(&request).await.unwrap();
+
+        assert_eq!(result, request);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), listener.accept())
+                .await
+                .is_err(),
+            "no TCP connection expected"
+        );
+    }
+
+    #[tokio::test]
+    async fn tcp_retry_goes_to_upstream_that_truncated() {
+        let (blackhole_addr, _bh) = spawn_stub(StubBehavior::BlackHole).await;
+        let (addr, _udp, _tcp) = spawn_udp_tcp_stub(
+            StubBehavior::EchoTruncated,
+            TcpStubBehavior::Echo { pad_to: 1500 },
+        )
+        .await;
+        let (forwarder, _upstreams) =
+            new_forwarder_with_timeout(vec![blackhole_addr, addr], BLACKHOLE_QUERY_TIMEOUT).await;
+
+        let request = make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD);
+        let result = forwarder.query(&request).await.unwrap();
+
+        assert_eq!(result.len(), 1500);
+    }
+
+    #[tokio::test]
+    async fn concurrent_truncated_queries_each_get_tcp_answer() {
+        let query_count = 5;
+        let addr = spawn_multi_udp_tcp_stub(query_count).await;
+        let (forwarder, _upstreams) = new_forwarder(vec![addr]).await;
+
+        let mut handles = Vec::new();
+        for i in 0..query_count {
+            let f = forwarder.clone();
+            let request =
+                make_dns_packet(0x500 + i as u16, format!("dns-tcp-payload-{i}").as_bytes());
+            handles.push(tokio::spawn(async move {
+                let result = f.query(&request).await.unwrap();
+                (request, result)
+            }));
+        }
+
+        for handle in handles {
+            let (request, result) = handle.await.unwrap();
+            assert_eq!(result, request);
+            assert!(!is_truncated(&result));
+        }
+    }
+
+    #[tokio::test]
+    async fn dropped_caller_closes_tcp_fallback_connection() {
+        let (addr, _udp, tcp) =
+            spawn_udp_tcp_stub(StubBehavior::EchoTruncated, TcpStubBehavior::WaitForClose).await;
+        let (forwarder, _upstreams) = new_forwarder(vec![addr]).await;
+
+        let caller = tokio::spawn(async move {
+            let request = make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD);
+            forwarder.query(&request).await
+        });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        caller.abort();
+
+        let closed = tokio::time::timeout(Duration::from_millis(500), tcp).await;
+        assert!(
+            closed.is_ok(),
+            "TCP connection must close with the caller, not at the deadline"
+        );
     }
 
     #[tokio::test]

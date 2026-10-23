@@ -9,6 +9,7 @@ mod nameserver;
 mod packet_decoder;
 mod packet_encoder;
 mod resolver;
+mod tcp_fallback;
 mod udp_forwarder;
 mod upstream;
 // TODO: LLT-7656 remove after integrating forwarder
