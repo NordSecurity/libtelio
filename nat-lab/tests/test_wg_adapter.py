@@ -42,6 +42,15 @@ SWD_WIREGUARD_KEY = r"HKLM\SYSTEM\CurrentControlSet\Enum\SWD\WireGuard"
 PROXY_READY_POLL_INTERVAL_S = 0.5
 FIRST_ADAPTER_CREATION_ATTEMPT_TIMEOUT_S = 60
 
+QUERY_CMD = [
+    "reg",
+    "query",
+    WINDOWS_NETWORK_ADAPTER_REGISTRY_KEY,
+    "/s",
+    "/f",
+    "DriverDesc",
+]
+
 
 @pytest.mark.windows
 @pytest.mark.parametrize("conn_tag", [ConnectionTag.VM_WINDOWS_1])
