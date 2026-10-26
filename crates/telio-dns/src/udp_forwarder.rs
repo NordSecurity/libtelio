@@ -15,7 +15,7 @@ use crate::{
 };
 use rand::RngExt;
 use std::{collections::HashMap, sync::Arc, time::Duration};
-use telio_utils::{sleep_until, telio_log_debug, telio_log_warn, Instant};
+use telio_utils::{sleep_until, telio_log_debug, Instant};
 use tokio::{
     net::UdpSocket,
     sync::{mpsc, oneshot, Mutex},
@@ -32,7 +32,7 @@ const DNS_ID_SPACE: u32 = 65536;
 macro_rules! send_channel_response {
     ($tx:expr, $result:expr) => {
         if $tx.send($result).is_err() {
-            telio_log_warn!("Response channel dropped");
+            telio_log_debug!("Response channel dropped");
         }
     };
 }
@@ -185,7 +185,7 @@ impl UdpForwarder {
                                 state.addrs().iter().any(|u| u.ip() == src.ip())
                             };
                             if !is_known_upstream {
-                                telio_log_warn!("Received DNS response from unknown source: {src}, ignoring");
+                                telio_log_debug!("Received DNS response from unknown source: {src}, ignoring");
                                 continue;
                             }
 
@@ -194,12 +194,12 @@ impl UdpForwarder {
                                     Self::handle_response(response_bytes, &mut pending);
                                 }
                                 None =>  {
-                                    telio_log_warn!("Failed to receive from upstream resolver, size overflow: {n}");
+                                    telio_log_debug!("Failed to receive from upstream resolver, size overflow: {n}");
                                 }
                             }
                         }
                         Err(e) => {
-                            telio_log_warn!("Failed to receive from upstream resolver: {e}");
+                            telio_log_debug!("Failed to receive from upstream resolver: {e}");
                         }
                     }
                 }
@@ -299,7 +299,7 @@ impl UdpForwarder {
         let internal_id = match get_dns_id(response_bytes) {
             Ok(id) => id,
             Err(e) => {
-                telio_log_warn!("Failed to get response ID: {e}");
+                telio_log_debug!("Failed to get response ID: {e}");
                 return;
             }
         };
@@ -307,13 +307,13 @@ impl UdpForwarder {
         let entry = match pending.remove(&internal_id) {
             Some(e) => e,
             None => {
-                telio_log_warn!("Received response for unknown ID: {internal_id}");
+                telio_log_debug!("Received response for unknown ID: {internal_id}");
                 return;
             }
         };
 
         if entry.respond_to.is_closed() {
-            telio_log_warn!("Caller dropped for request: {internal_id}");
+            telio_log_debug!("Caller dropped for request: {internal_id}");
             return;
         }
 
@@ -352,7 +352,7 @@ impl UdpForwarder {
             };
 
             if is_closed {
-                telio_log_warn!("Caller dropped for: {internal_id}");
+                telio_log_debug!("Caller dropped for: {internal_id}");
                 continue;
             }
 
@@ -382,7 +382,7 @@ impl UdpForwarder {
                     pending.insert(internal_id, entry);
                 }
                 None => {
-                    telio_log_warn!("All upstreams exhausted for request: {internal_id}");
+                    telio_log_debug!("All upstreams exhausted for request: {internal_id}");
                     send_channel_response!(entry.respond_to, Err(ForwardError::Timeout));
                 }
             }
