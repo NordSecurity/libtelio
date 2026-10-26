@@ -9,7 +9,7 @@ mod test_module {
     };
 
     use telio_core::{
-        ffi_types::{FfiResult, TelioLoggerCb},
+        ffi_types::{TelioErrorVariant, TelioLoggerCb},
         logging::{ASYNC_CHANNEL_CLOSED_MSG, START_ASYNC_LOGGER_MSG},
     };
 
@@ -31,7 +31,7 @@ mod test_module {
                 &self,
                 log_level: telio_core::ffi_types::TelioLogLevel,
                 payload: String,
-            ) -> FfiResult<()> {
+            ) -> Result<(), TelioErrorVariant> {
                 sleep(Duration::from_secs(2)); // Slow down logger so that the internal logs queue grows
                 println!("{log_level:?} {payload:?}");
                 if payload == START_ASYNC_LOGGER_MSG || payload == ASYNC_CHANNEL_CLOSED_MSG {

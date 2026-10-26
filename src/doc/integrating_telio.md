@@ -24,7 +24,7 @@ use telio::{ffi::*, types::*};
 #[derive(Debug)]
 struct Logger;
 impl TelioLoggerCb for Logger {
-    fn log(&self, log_level: TelioLogLevel, payload: String) -> FfiResult<()> {
+    fn log(&self, log_level: TelioLogLevel, payload: String) -> Result<(), TelioErrorVariant> {
         // report log level and payload to the app
         Ok(())
     }
@@ -38,7 +38,7 @@ import github.com/nordsecurity/telio
 
 type Logger struct {}
 
-func (l Logger) Log(logLevel TelioLogLevel, payload string) *TelioError {
+func (l Logger) Log(logLevel TelioLogLevel, payload string) *TelioErrorVariant {
     // report log level and payload to the app
 }
 
