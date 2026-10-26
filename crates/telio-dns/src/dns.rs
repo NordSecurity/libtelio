@@ -1,6 +1,6 @@
 use crate::{
     bind_tun,
-    error::{DnsIoError, Error, Result},
+    error::{DnsIoError, ErrorVariant, Result},
     LocalNameServer, NameServer, Records,
 };
 use async_trait::async_trait;
@@ -112,7 +112,7 @@ impl LocalDnsResolver {
                     0,
                     None,
                 )
-                .map_err(|e| Error::CreateTunnel(e.to_string()))?,
+                .map_err(|e| ErrorVariant::CreateTunnel(e.to_string()))?,
             )),
             socket_port,
             nameserver,
