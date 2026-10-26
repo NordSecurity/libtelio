@@ -5,7 +5,7 @@ use tracing::Level;
 
 use std::{convert::TryFrom, panic::RefUnwindSafe};
 
-use crate::device::{AdapterType, Error as DevError};
+use crate::device::{AdapterType, Error as DevError, ErrorVariant as DevErrorVariant};
 
 pub trait TelioEventCb: Send + Sync + std::fmt::Debug {
     fn event(&self, payload: Event) -> FfiResult<()>;
@@ -102,9 +102,9 @@ impl From<&serde_json::Error> for TelioError {
 impl From<DevError> for TelioError {
     fn from(err: DevError) -> Self {
         // TODO: Map more error types.
-        match err {
-            DevError::AlreadyStarted => Self::AlreadyStarted,
-            DevError::BadPublicKey => Self::InvalidKey,
+        match err.variant() {
+            DevErrorVariant::AlreadyStarted => Self::AlreadyStarted,
+            DevErrorVariant::BadPublicKey => Self::InvalidKey,
             _ => Self::UnknownError {
                 inner: format!("{err:?}"),
             },
@@ -115,9 +115,9 @@ impl From<DevError> for TelioError {
 impl From<&DevError> for TelioError {
     fn from(err: &DevError) -> Self {
         // TODO: Map more error types.
-        match err {
-            DevError::AlreadyStarted => Self::AlreadyStarted,
-            DevError::BadPublicKey => Self::InvalidKey,
+        match err.variant() {
+            DevErrorVariant::AlreadyStarted => Self::AlreadyStarted,
+            DevErrorVariant::BadPublicKey => Self::InvalidKey,
             _ => Self::UnknownError {
                 inner: format!("{err:?}"),
             },
