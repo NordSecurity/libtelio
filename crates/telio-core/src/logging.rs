@@ -456,7 +456,11 @@ mod test {
     #[derive(Default, Clone, Debug)]
     struct Log(Arc<Mutex<Vec<(TelioLogLevel, String)>>>);
     impl TelioLoggerCb for Log {
-        fn log(&self, level: TelioLogLevel, payload: String) -> crate::FfiResult<()> {
+        fn log(
+            &self,
+            level: TelioLogLevel,
+            payload: String,
+        ) -> Result<(), crate::TelioErrorVariant> {
             let mut logs = self.0.lock().expect("Unable to lock");
             logs.push((level, payload));
             Ok(())
@@ -466,7 +470,11 @@ mod test {
     #[derive(Default, Clone, Debug)]
     struct SlowLog(Arc<Mutex<Vec<(TelioLogLevel, String)>>>);
     impl TelioLoggerCb for SlowLog {
-        fn log(&self, level: TelioLogLevel, payload: String) -> crate::FfiResult<()> {
+        fn log(
+            &self,
+            level: TelioLogLevel,
+            payload: String,
+        ) -> Result<(), crate::TelioErrorVariant> {
             sleep(Duration::from_secs(1));
             let mut logs = self.0.lock().expect("Unable to lock");
             logs.push((level, payload));
@@ -477,7 +485,11 @@ mod test {
     #[derive(Default, Clone, Debug)]
     struct BlockedLog;
     impl TelioLoggerCb for BlockedLog {
-        fn log(&self, _level: TelioLogLevel, _payload: String) -> crate::FfiResult<()> {
+        fn log(
+            &self,
+            _level: TelioLogLevel,
+            _payload: String,
+        ) -> Result<(), crate::TelioErrorVariant> {
             loop {}
         }
     }

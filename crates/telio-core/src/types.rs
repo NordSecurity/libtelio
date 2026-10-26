@@ -1,28 +1,27 @@
 use telio_crypto::KeyDecodeError;
 use telio_model::event::Event;
+pub use telio_utils::backtrace::{Backtrace, Location};
 use telio_utils::map_enum;
 use tracing::Level;
 
 use std::{convert::TryFrom, panic::RefUnwindSafe};
 
-use crate::device::{AdapterType, Error as DevError, ErrorVariant as DevErrorVariant};
+use crate::device::{AdapterType, ErrorVariant as DevErrorVariant};
 
 pub trait TelioEventCb: Send + Sync + std::fmt::Debug {
-    fn event(&self, payload: Event) -> FfiResult<()>;
+    fn event(&self, payload: Event) -> Result<(), TelioErrorVariant>;
 }
 
 pub trait TelioLoggerCb: Send + Sync + std::fmt::Debug {
-    fn log(&self, log_level: TelioLogLevel, payload: String) -> FfiResult<()>;
+    fn log(&self, log_level: TelioLogLevel, payload: String) -> Result<(), TelioErrorVariant>;
 }
 
 pub trait TelioProtectCb: Send + Sync + RefUnwindSafe + std::fmt::Debug {
-    fn protect(&self, socket_id: i32) -> FfiResult<()>;
+    fn protect(&self, socket_id: i32) -> Result<(), TelioErrorVariant>;
 }
 
-pub type FfiResult<T> = Result<T, TelioError>;
-
-#[derive(Debug, thiserror::Error)]
-pub enum TelioError {
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum TelioErrorVariant {
     #[error("UnknownError: {inner}")]
     UnknownError { inner: String },
     #[error("InvalidKey")]
@@ -65,7 +64,7 @@ pub enum TelioLogLevel {
     Trace = 5,
 }
 
-impl From<uniffi::UnexpectedUniFFICallbackError> for TelioError {
+impl From<uniffi::UnexpectedUniFFICallbackError> for TelioErrorVariant {
     fn from(err: uniffi::UnexpectedUniFFICallbackError) -> Self {
         let err_string = err.to_string();
         let err_reason = err.reason;
@@ -75,47 +74,34 @@ impl From<uniffi::UnexpectedUniFFICallbackError> for TelioError {
     }
 }
 
-impl From<KeyDecodeError> for TelioError {
+impl From<KeyDecodeError> for TelioErrorVariant {
     fn from(_: KeyDecodeError) -> Self {
         Self::InvalidKey
     }
 }
 
-impl From<&KeyDecodeError> for TelioError {
+impl From<&KeyDecodeError> for TelioErrorVariant {
     fn from(_: &KeyDecodeError) -> Self {
         Self::InvalidKey
     }
 }
 
-impl From<serde_json::Error> for TelioError {
+impl From<serde_json::Error> for TelioErrorVariant {
     fn from(_: serde_json::Error) -> Self {
         Self::BadConfig
     }
 }
 
-impl From<&serde_json::Error> for TelioError {
+impl From<&serde_json::Error> for TelioErrorVariant {
     fn from(_: &serde_json::Error) -> Self {
         Self::BadConfig
     }
 }
 
-impl From<DevError> for TelioError {
-    fn from(err: DevError) -> Self {
+impl From<&DevErrorVariant> for TelioErrorVariant {
+    fn from(err: &DevErrorVariant) -> Self {
         // TODO: Map more error types.
-        match err.variant() {
-            DevErrorVariant::AlreadyStarted => Self::AlreadyStarted,
-            DevErrorVariant::BadPublicKey => Self::InvalidKey,
-            _ => Self::UnknownError {
-                inner: format!("{err:?}"),
-            },
-        }
-    }
-}
-
-impl From<&DevError> for TelioError {
-    fn from(err: &DevError) -> Self {
-        // TODO: Map more error types.
-        match err.variant() {
+        match err {
             DevErrorVariant::AlreadyStarted => Self::AlreadyStarted,
             DevErrorVariant::BadPublicKey => Self::InvalidKey,
             _ => Self::UnknownError {

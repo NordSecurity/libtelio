@@ -2,7 +2,7 @@ use crate::telio_log_debug;
 use backtrace::{self, BacktraceFrame, BacktraceSymbol};
 use findshlibs::{Avma, Segment, SharedLibrary, SharedLibraryId, TargetSharedLibrary};
 use parking_lot::Mutex;
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 use uuid::Uuid;
 
 /// Print to debug log current backtrace
@@ -37,19 +37,12 @@ pub fn log_current_backtrace() {
 /// Function of a [Backtrace] frame
 #[derive(Debug, Clone)]
 pub struct Location {
-    /// Source file, when debug info is available
-    pub file: Option<String>,
-    /// Line in the source file, when debug info is available
-    pub line: Option<u64>,
-    /// Demangled function name, when symbols are available
-    pub name: Option<String>,
-    /// File name of the binary holding the function
-    pub module: Option<String>,
-    /// UUID (Apple), GNU build ID (Linux, Android) or PDB GUID and age in symbol server format
-    /// (Windows) of the binary
-    pub module_id: Option<String>,
-    /// Address of the frame in the binary, resolvable offline with the binary's debug file
-    pub address: Option<u64>,
+    file: Option<String>,
+    line: Option<u64>,
+    name: Option<String>,
+    module: Option<String>,
+    module_id: Option<String>,
+    address: Option<u64>,
 }
 
 impl Location {
@@ -66,6 +59,37 @@ impl Location {
             module_id: module.and_then(|module| module.id.clone()),
             address: module.map(|module| module.address),
         }
+    }
+
+    /// Source file, when debug info is available
+    pub fn file(&self) -> Option<String> {
+        self.file.clone()
+    }
+
+    /// Line in the source file, when debug info is available
+    pub fn line(&self) -> Option<u64> {
+        self.line
+    }
+
+    /// Demangled function name, when symbols are available
+    pub fn name(&self) -> Option<String> {
+        self.name.clone()
+    }
+
+    /// File name of the binary holding the function
+    pub fn module(&self) -> Option<String> {
+        self.module.clone()
+    }
+
+    /// UUID (Apple), GNU build ID (Linux, Android) or PDB GUID and age in symbol server format
+    /// (Windows) of the binary
+    pub fn module_id(&self) -> Option<String> {
+        self.module_id.clone()
+    }
+
+    /// Address of the frame in the binary, resolvable offline with the binary's debug file
+    pub fn address(&self) -> Option<u64> {
+        self.address
     }
 }
 
@@ -89,7 +113,7 @@ impl Backtrace {
     }
 
     /// Resolve the captured frames into functions, innermost first
-    pub fn functions(&self) -> Vec<Location> {
+    pub fn functions(&self) -> Vec<Arc<Location>> {
         let mut backtrace = self.inner.lock();
         backtrace.resolve();
         let frames = backtrace.frames();
@@ -97,6 +121,7 @@ impl Backtrace {
             .iter()
             .zip(find_modules(frames))
             .flat_map(|(frame, module)| frame_functions(frame, module.as_ref()))
+            .map(Arc::new)
             .collect()
     }
 }

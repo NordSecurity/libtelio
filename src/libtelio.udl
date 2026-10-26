@@ -61,8 +61,29 @@ enum NatType {
     "Unknown",
 };
 
+/// Function of a backtrace frame
+interface Location {
+    /// Source file, when debug info is available
+    string? file();
+    /// Line in the source file, when debug info is available
+    u64? line();
+    /// Demangled function name, when symbols are available
+    string? name();
+    /// File name of the binary holding the function
+    string? module();
+    /// UUID (Apple), GNU build ID (Linux, Android) or PDB GUID and age in symbol server format
+    /// (Windows) of the binary
+    string? module_id();
+    /// Address of the frame in the binary, resolvable offline with the binary's debug file
+    u64? address();
+};
+
+interface Backtrace {
+    sequence<Location> functions();
+};
+
 [Error]
-interface TelioError {
+interface TelioErrorVariant {
     UnknownError(string inner);
     InvalidKey();
     BadConfig();
@@ -70,6 +91,13 @@ interface TelioError {
     InvalidString();
     AlreadyStarted();
     NotStarted();
+};
+
+/// Error thrown by libtelio, carries the backtrace of the place where it was created
+[Traits=(Debug, Display)]
+interface TelioError {
+    TelioErrorVariant variant();
+    Backtrace backtrace();
 };
 
 /// Possible adapters.
@@ -612,17 +640,17 @@ interface Telio {
 };
 
 callback interface TelioEventCb {
-    [Throws=TelioError]
+    [Throws=TelioErrorVariant]
     void event(Event payload);
 };
 
 callback interface TelioLoggerCb {
-    [Throws=TelioError]
+    [Throws=TelioErrorVariant]
     void log(TelioLogLevel log_level, string payload);
 };
 
 callback interface TelioProtectCb {
-    [Throws=TelioError]
+    [Throws=TelioErrorVariant]
     void protect(i32 socket_id);
 };
 

@@ -48,10 +48,10 @@ mod uniffi_libtelio {
         let mut key = [0_u8; telio_crypto::KEY_SIZE];
         let decoded_bytes = BASE64_STANDARD
             .decode(val)
-            .map_err(|_| TelioError::InvalidKey)
+            .map_err(|_| TelioErrorVariant::InvalidKey)
             .and_then(|val| {
                 if val.len() != telio_crypto::KEY_SIZE {
-                    Err(TelioError::InvalidKey)
+                    Err(TelioErrorVariant::InvalidKey)
                 } else {
                     Ok(val)
                 }
@@ -90,7 +90,7 @@ mod uniffi_libtelio {
         type Builtin = String;
 
         fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
-            Ok(val.parse().map_err(|e| TelioError::UnknownError {
+            Ok(val.parse().map_err(|e| TelioErrorVariant::UnknownError {
                 inner: format!("Invalid IpAddr address: '{val}': {e}"),
             })?)
         }
@@ -104,7 +104,7 @@ mod uniffi_libtelio {
         type Builtin = String;
 
         fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
-            Ok(val.parse().map_err(|e| TelioError::UnknownError {
+            Ok(val.parse().map_err(|e| TelioErrorVariant::UnknownError {
                 inner: format!("Invalid IpNet address: '{val}': {e}"),
             })?)
         }
@@ -144,7 +144,7 @@ mod uniffi_libtelio {
         type Builtin = String;
 
         fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
-            Ok(val.parse().map_err(|_| TelioError::UnknownError {
+            Ok(val.parse().map_err(|_| TelioErrorVariant::UnknownError {
                 inner: "Invalid IP address".to_owned(),
             })?)
         }
