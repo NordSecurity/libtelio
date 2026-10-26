@@ -1761,7 +1761,7 @@ mod tests {
         // Expect a single call to get_interface when we enter the loop first and
         // and a second in the finished backoff
         wg.expect_get_interface()
-            .returning(move || Err(telio_wg::Error::UnsupportedOperationError))
+            .returning(move || Err(telio_wg::ErrorVariant::UnsupportedOperationError.into()))
             .times(2);
 
         // We need to prepare some more complex mock to test if it is used properly

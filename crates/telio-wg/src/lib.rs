@@ -13,7 +13,9 @@ pub(crate) mod windows;
 pub mod uapi;
 
 pub use crate::{
-    adapter::{Adapter, AdapterType, Error, FirewallInboundCb, FirewallOutboundCb, Tun},
+    adapter::{
+        Adapter, AdapterType, Error, ErrorVariant, FirewallInboundCb, FirewallOutboundCb, Tun,
+    },
     link_detection::LinkDetection,
     wg::*,
 };

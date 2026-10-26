@@ -1554,7 +1554,7 @@ mod tests {
             .times(1)
             .returning(move |_| match which_error {
                 0 => Err(last_rx_time_provider::Error::UnableToCommunicateWithWG(
-                    telio_wg::Error::UnsupportedOperationError,
+                    telio_wg::ErrorVariant::UnsupportedOperationError.into(),
                 )),
                 1 => Ok(None),
 

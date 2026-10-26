@@ -2,7 +2,9 @@
 
 #![warn(clippy::unwrap_used)]
 
-use super::{Adapter, Error as AdapterError, Tun as NativeTun};
+use super::{
+    Adapter, Error as AdapterError, ErrorVariant as AdapterErrorVariant, Tun as NativeTun,
+};
 use crate::uapi::{Cmd, Cmd::Get, Cmd::Set, Interface, Peer, Response};
 use futures::executor::block_on;
 use futures::future::{BoxFuture, FutureExt};
@@ -85,7 +87,7 @@ impl Adapter for LinuxNativeWg {
     }
 
     async fn set_tun(&self, _tun: super::Tun) -> Result<(), AdapterError> {
-        Err(AdapterError::UnsupportedAdapter)
+        Err(AdapterErrorVariant::UnsupportedAdapter.into())
     }
 
     fn clone_box(&self) -> Option<Box<dyn Adapter>> {
