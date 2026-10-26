@@ -185,7 +185,7 @@ pub async fn fetch_keys(
 
     // Extract the shared secret
     let pq_shared = decapsulate(&ciphertext, &pq_secret).map_err(|err| {
-        super::Error::Generic(format!("Failed to decapsulate PQ shared secret: {err:?}"))
+        super::ErrorVariant::Generic(format!("Failed to decapsulate PQ shared secret: {err:?}"))
     })?;
     let pq_shared = telio_crypto::PresharedKey::new(pq_shared);
 
@@ -220,7 +220,7 @@ pub async fn rekey(
         1 => push_rekey_method_udp_payload_v1(&mut pkgbuf),
         2 => {
             let auth = v2_auth.ok_or_else(|| {
-                super::Error::Generic(
+                super::ErrorVariant::Generic(
                     "Authentication parameters required for version 2".to_string(),
                 )
             })?;
@@ -233,9 +233,10 @@ pub async fn rekey(
             );
         }
         _ => {
-            return Err(super::Error::Generic(format!(
+            return Err(super::ErrorVariant::Generic(format!(
                 "Unsupported PQ version: {pq_version}",
-            )))
+            ))
+            .into())
         }
     }
 
@@ -260,7 +261,7 @@ pub async fn rekey(
 
     // Extract the shared secret
     let pq_shared = decapsulate(&ciphertext, &**pq_secret).map_err(|err| {
-        super::Error::Generic(format!("Failed to decapsulate PQ shared secret: {err:?}"))
+        super::ErrorVariant::Generic(format!("Failed to decapsulate PQ shared secret: {err:?}"))
     })?;
     let pq_shared = telio_crypto::PresharedKey::new(pq_shared);
 
@@ -398,10 +399,11 @@ fn parse_method(
 ) -> super::Result<Option<u32>> {
     let version = data.read_u32::<LittleEndian>()?;
     if version != expected_version {
-        return Err(super::Error::Io(io::Error::new(
+        return Err(super::ErrorVariant::Io(io::Error::new(
             io::ErrorKind::InvalidData,
             "Server responded with invalid PQ handshake version",
-        )));
+        ))
+        .into());
     }
 
     match expected_version {
@@ -409,7 +411,7 @@ fn parse_method(
             // v1 reports error as a single(5th) byte with no further payload.
             #[allow(clippy::comparison_chain)]
             if data_len < 5 {
-                return Err(super::Error::ServerV1(PqProtoV1Status::NoData));
+                return Err(super::ErrorVariant::ServerV1(PqProtoV1Status::NoData).into());
             } else if data_len == 5 {
                 let error_code = data.read_u8()?;
                 let status = PqProtoV1Status::from(error_code);
@@ -418,7 +420,7 @@ fn parse_method(
                     error_code,
                     status
                 );
-                return Err(super::Error::ServerV1(status));
+                return Err(super::ErrorVariant::ServerV1(status).into());
             }
             Ok(None)
         }
@@ -428,7 +430,7 @@ fn parse_method(
             // Total error response size is 12 bytes.
             // See LLT RFC-0102 for details.
             if data_len < 12 {
-                return Err(super::Error::ServerV2(PqProtoV2Status::NoData));
+                return Err(super::ErrorVariant::ServerV2(PqProtoV2Status::NoData).into());
             }
 
             let method = data.read_u32::<LittleEndian>()?;
@@ -443,15 +445,16 @@ fn parse_method(
                     error_code,
                     status
                 );
-                return Err(super::Error::ServerV2(status));
+                return Err(super::ErrorVariant::ServerV2(status).into());
             }
 
             Ok(Some(method))
         }
-        _ => Err(super::Error::Io(io::Error::new(
+        _ => Err(super::ErrorVariant::Io(io::Error::new(
             io::ErrorKind::InvalidData,
             format!("Unsupported PQ version: {expected_version}"),
-        ))),
+        ))
+        .into()),
     }
 }
 
@@ -491,10 +494,11 @@ pub fn parse_response_payload(
     let ciphertext_len = data.read_u32::<LittleEndian>()?;
 
     if ciphertext_len != CIPHERTEXT_LEN {
-        return Err(super::Error::Io(io::Error::new(
+        return Err(super::ErrorVariant::Io(io::Error::new(
             io::ErrorKind::InvalidData,
             "Server responded with invalid PQ handshake ciphertext length",
-        )));
+        ))
+        .into());
     }
 
     let mut cipherbuf = [0; CIPHERTEXT_LEN as usize];
@@ -773,7 +777,7 @@ mod tests {
     use crate::PQ_UPGRADER_IPV4;
     use crate::{
         proto::{PqProtoV1Status, PqProtoV2Status},
-        Error,
+        ErrorVariant,
     };
     use base64::prelude::*;
     use safe_pqc_kyber::decapsulate;
@@ -885,66 +889,98 @@ mod tests {
     #[test]
     fn parse_response_error_v1() {
         assert!(matches!(
-            super::parse_response_payload(b"\x01\x00\x00\x00\x01", 1),
-            Err(Error::ServerV1(PqProtoV1Status::ServerError))
+            super::parse_response_payload(b"\x01\x00\x00\x00\x01", 1)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::ServerV1(PqProtoV1Status::ServerError))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x01\x00\x00\x00\x02", 1),
-            Err(Error::ServerV1(PqProtoV1Status::DeviceError))
+            super::parse_response_payload(b"\x01\x00\x00\x00\x02", 1)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::ServerV1(PqProtoV1Status::DeviceError))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x01\x00\x00\x00\x03", 1),
-            Err(Error::ServerV1(PqProtoV1Status::PeerOrDeviceNotFound))
-        ));
-
-        assert!(matches!(
-            super::parse_response_payload(b"\x01\x00\x00\x00\x04", 1),
-            Err(Error::ServerV1(PqProtoV1Status::CouldNotReadTimestamp))
-        ));
-
-        assert!(matches!(
-            super::parse_response_payload(b"\x01\x00\x00\x00\x05", 1),
-            Err(Error::ServerV1(PqProtoV1Status::CouldNotReadVersion))
+            super::parse_response_payload(b"\x01\x00\x00\x00\x03", 1)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::ServerV1(
+                PqProtoV1Status::PeerOrDeviceNotFound
+            ))
         ));
 
         assert!(matches!(
-            super::parse_response_payload(b"\x01\x00\x00\x00\x06", 1),
-            Err(Error::ServerV1(PqProtoV1Status::CouldNotReadMessageType))
+            super::parse_response_payload(b"\x01\x00\x00\x00\x04", 1)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::ServerV1(
+                PqProtoV1Status::CouldNotReadTimestamp
+            ))
         ));
 
         assert!(matches!(
-            super::parse_response_payload(b"\x01\x00\x00\x00\x07", 1),
-            Err(Error::ServerV1(PqProtoV1Status::Failure))
+            super::parse_response_payload(b"\x01\x00\x00\x00\x05", 1)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::ServerV1(PqProtoV1Status::CouldNotReadVersion))
+        ));
+
+        assert!(matches!(
+            super::parse_response_payload(b"\x01\x00\x00\x00\x06", 1)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::ServerV1(
+                PqProtoV1Status::CouldNotReadMessageType
+            ))
+        ));
+
+        assert!(matches!(
+            super::parse_response_payload(b"\x01\x00\x00\x00\x07", 1)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::ServerV1(PqProtoV1Status::Failure))
         ));
 
         // Pass unknown errors
         assert!(matches!(
-            super::parse_response_payload(b"\x01\x00\x00\x00\x10", 1),
-            Err(Error::ServerV1(PqProtoV1Status::UnhandledError))
+            super::parse_response_payload(b"\x01\x00\x00\x00\x10", 1)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::ServerV1(PqProtoV1Status::UnhandledError))
         ));
 
         assert!(matches!(
-            super::parse_response_payload(b"\x01\x00\x00\x00\x20", 1),
-            Err(Error::ServerV1(PqProtoV1Status::UnhandledError))
+            super::parse_response_payload(b"\x01\x00\x00\x00\x20", 1)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::ServerV1(PqProtoV1Status::UnhandledError))
         ));
 
         assert!(matches!(
-            super::parse_response_payload(b"\x01\x00\x00\x00", 1),
-            Err(Error::ServerV1(PqProtoV1Status::NoData))
+            super::parse_response_payload(b"\x01\x00\x00\x00", 1)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::ServerV1(PqProtoV1Status::NoData))
         ));
 
         // Pass another version and don't expect v1 status codes
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x02", 1),
-            Err(Error::Io(_))
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02", 1)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::Io(_))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x01", 1),
-            Err(Error::Io(_))
+            super::parse_response_payload(b"\x02\x00\x00\x00\x01", 1)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::Io(_))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x40", 1),
-            Err(Error::Io(_))
+            super::parse_response_payload(b"\x02\x00\x00\x00\x40", 1)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::Io(_))
         ));
     }
 
@@ -984,48 +1020,76 @@ mod tests {
         // V2 error format: version (4) + method (4, = 2 for error) + code (4) = 12 bytes
         // Method 2 = MessageTypeError
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x01\x00\x00\x00", 2),
-            Err(Error::ServerV2(PqProtoV2Status::ServerError))
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x01\x00\x00\x00", 2)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::ServerV2(PqProtoV2Status::ServerError))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x02\x00\x00\x00", 2),
-            Err(Error::ServerV2(PqProtoV2Status::DeviceError))
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x02\x00\x00\x00", 2)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::ServerV2(PqProtoV2Status::DeviceError))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00", 2),
-            Err(Error::ServerV2(PqProtoV2Status::PeerOrDeviceNotFound))
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00", 2)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::ServerV2(
+                PqProtoV2Status::PeerOrDeviceNotFound
+            ))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00\x00", 2),
-            Err(Error::ServerV2(PqProtoV2Status::CouldNotReadTimestamp))
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00\x00", 2)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::ServerV2(
+                PqProtoV2Status::CouldNotReadTimestamp
+            ))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x05\x00\x00\x00", 2),
-            Err(Error::ServerV2(PqProtoV2Status::CouldNotReadVersion))
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x05\x00\x00\x00", 2)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::ServerV2(PqProtoV2Status::CouldNotReadVersion))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x06\x00\x00\x00", 2),
-            Err(Error::ServerV2(PqProtoV2Status::CouldNotReadMessageType))
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x06\x00\x00\x00", 2)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::ServerV2(
+                PqProtoV2Status::CouldNotReadMessageType
+            ))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x07\x00\x00\x00", 2),
-            Err(Error::ServerV2(PqProtoV2Status::Failure))
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x07\x00\x00\x00", 2)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::ServerV2(PqProtoV2Status::Failure))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x08\x00\x00\x00", 2),
-            Err(Error::ServerV2(PqProtoV2Status::AuthenticationFailed))
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x08\x00\x00\x00", 2)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::ServerV2(
+                PqProtoV2Status::AuthenticationFailed
+            ))
         ));
 
         // Pass unknown errors
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x10\x00\x00\x00", 2),
-            Err(Error::ServerV2(PqProtoV2Status::UnhandledError))
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x10\x00\x00\x00", 2)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::ServerV2(PqProtoV2Status::UnhandledError))
         ));
 
         // Too short payload (less than 12 bytes)
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00", 2),
-            Err(Error::ServerV2(PqProtoV2Status::NoData))
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00", 2)
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::ServerV2(PqProtoV2Status::NoData))
         ));
     }
 
