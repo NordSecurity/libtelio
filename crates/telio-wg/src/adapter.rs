@@ -94,7 +94,7 @@ pub trait Adapter: Send + Sync {
 
     /// Set the MTU of the adapter interface, `None` restores the adapter's own handling
     async fn set_adapter_mtu(&self, _mtu: Option<u32>) -> Result<(), Error> {
-        Err(Error::UnsupportedAdapter)
+        Err(ErrorVariant::UnsupportedAdapter.into())
     }
 
     /// Make a copy of this adapter.
@@ -117,7 +117,7 @@ pub const MIN_MTU: u32 = 1280;
 
 /// Enumeration of `Error` types for `Adapter` struct
 #[derive(Debug, TError)]
-pub enum Error {
+pub enum ErrorVariant {
     /// Error types from NepTUN implementation
     #[cfg(not(windows))]
     #[error("NepTUN adapter error {0}")]
@@ -203,6 +203,11 @@ pub enum Error {
     EndpointParsingError(#[from] AddrParseError),
 }
 
+telio_utils::traced_error! {
+    /// Adapter error, carries the backtrace of the place where it was created
+    pub struct Error(ErrorVariant);
+}
+
 /// Enumeration of types for `Adapter` struct
 #[derive(Clone)]
 pub enum AdapterType {
@@ -264,9 +269,10 @@ impl FromStr for AdapterType {
             "neptun" => Ok(Self::NepTUN),
             "linux-native" => Ok(Self::LinuxNativeWg),
             "wireguard-nt" => Ok(Self::WindowsNativeWg),
-            _ => Err(Error::AdapterTypeParsingError(format!(
+            _ => Err(ErrorVariant::AdapterTypeParsingError(format!(
                 "unrecognised adapter type: {s}"
-            ))),
+            ))
+            .into()),
         }
     }
 }
@@ -280,7 +286,7 @@ pub(crate) async fn start(cfg: Config) -> Result<Box<dyn Adapter>, Error> {
     match cfg.adapter {
         AdapterType::NepTUN => {
             #[cfg(windows)]
-            return Err(Error::UnsupportedAdapter);
+            return Err(ErrorVariant::UnsupportedAdapter.into());
 
             #[cfg(unix)]
             use std::os::fd::IntoRawFd;
@@ -300,14 +306,14 @@ pub(crate) async fn start(cfg: Config) -> Result<Box<dyn Adapter>, Error> {
         }
         AdapterType::LinuxNativeWg => {
             #[cfg(not(target_os = "linux"))]
-            return Err(Error::UnsupportedAdapter);
+            return Err(ErrorVariant::UnsupportedAdapter.into());
 
             #[cfg(target_os = "linux")]
             Ok(Box::new(linux_native_wg::LinuxNativeWg::start(&name)?))
         }
         AdapterType::WindowsNativeWg => {
             #[cfg(not(windows))]
-            return Err(Error::UnsupportedAdapter);
+            return Err(ErrorVariant::UnsupportedAdapter.into());
 
             #[cfg(windows)]
             Ok(Box::new(
@@ -320,7 +326,9 @@ pub(crate) async fn start(cfg: Config) -> Result<Box<dyn Adapter>, Error> {
                 .await?,
             ))
         }
-        AdapterType::Custom(adapter) => adapter.clone_box().ok_or(Error::UnsupportedAdapter),
+        AdapterType::Custom(adapter) => adapter
+            .clone_box()
+            .ok_or_else(|| ErrorVariant::UnsupportedAdapter.into()),
     }
 }
 
@@ -356,8 +364,8 @@ mod tests {
 
         for input in test_input {
             let err = AdapterType::from_str(input).unwrap_err();
-            match err {
-                Error::AdapterTypeParsingError(_) => {}
+            match err.variant() {
+                ErrorVariant::AdapterTypeParsingError(_) => {}
                 _ => {
                     panic!("wrong error {}", err);
                 }
