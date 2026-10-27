@@ -28,7 +28,7 @@ const CHANNEL_SIZE: usize = 256;
 /// Maximum number of DNS IDs
 const DNS_ID_SPACE: u32 = 65536;
 
-/// Send a result through the response channel, logging a warning if the receiver was dropped
+/// Send a result through the response channel
 macro_rules! send_channel_response {
     ($tx:expr, $result:expr) => {
         if $tx.send($result).is_err() {
