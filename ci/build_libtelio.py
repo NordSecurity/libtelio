@@ -3,6 +3,7 @@
 import getpass
 import os
 import sys
+import debug_ids
 import moose_utils
 from fetch_artifacts import ArtifactsDownloader
 import shutil
@@ -26,6 +27,14 @@ import rust_build_utils.darwin_build_utils as dbu
 import rust_build_utils.android_build_utils as abu
 from env import LIBTELIO_ENV_MOOSE_RELEASE_TAG
 from env import LIBTELIO_ENV_UNIFFI_GENERATORS_TAG
+
+LINUX_READELF = "readelf"
+ANDROID_READELF = f"{abu.TOOLCHAIN}/bin/llvm-readelf"
+DARWIN_DWARFDUMP = "dwarfdump"
+WINDOWS_DUMPBIN = "dumpbin.exe"
+ELF_DEBUG_SUFFIX = ".debug"
+DSYM_SUFFIX = ".dSYM"
+PDB_SUFFIX = ".pdb"
 
 # As of 2026-05, moose has different architecture codenames for
 # android and linux/windows so we need to map them here.
@@ -148,6 +157,79 @@ def post_copy_darwin_debug_symbols_to_distribution_dir(config, args):
                     )
 
 
+def check_libtelio_debug_ids(config, dist_arch, check):
+    dist_dir = Path(
+        PROJECT_CONFIG.get_distribution_path(
+            config.target_os, dist_arch, "", config.debug
+        )
+    )
+    for lib in LIBTELIO_CONFIG[config.target_os]["packages"][NAME].values():
+        try:
+            check(dist_dir / lib)
+        except debug_ids.DebugIdError as error:
+            print(f"Debug ID check failed: {error}")
+            exit(1)
+
+
+def post_check_linux_debug_ids(config, args):
+    if config.debug:
+        return
+
+    check_libtelio_debug_ids(
+        config,
+        config.arch,
+        lambda lib: debug_ids.check_elf(
+            LINUX_READELF, lib, Path(f"{lib}{ELF_DEBUG_SUFFIX}")
+        ),
+    )
+
+
+def post_check_android_debug_ids(config, args):
+    if config.debug:
+        return
+
+    check_libtelio_debug_ids(
+        config,
+        GLOBAL_CONFIG[config.target_os]["archs"][config.arch]["dist"],
+        lambda lib: debug_ids.check_elf(
+            ANDROID_READELF, lib, Path(f"{lib}{ELF_DEBUG_SUFFIX}")
+        ),
+    )
+
+
+def post_check_darwin_debug_ids(config, args):
+    if config.debug:
+        return
+
+    check_libtelio_debug_ids(
+        config,
+        config.arch,
+        lambda lib: debug_ids.check_macho(
+            DARWIN_DWARFDUMP, lib, Path(f"{lib}{DSYM_SUFFIX}")
+        ),
+    )
+
+
+def post_check_windows_debug_ids(config, args):
+    if config.debug or not args.msvc:
+        return
+
+    msvc_context = None
+    if not msvc.is_msvc_active():
+        msvc_context = msvc.activate_msvc(
+            "amd64" if config.arch == "x86_64" else config.arch
+        )
+    check_libtelio_debug_ids(
+        config,
+        config.arch,
+        lambda lib: debug_ids.check_pe(
+            WINDOWS_DUMPBIN, lib, lib.with_suffix(PDB_SUFFIX)
+        ),
+    )
+    if msvc_context is not None:
+        msvc.deactivate_msvc(msvc_context)
+
+
 def find_file_in_tree(filename, search_path):
     found_files = []
     for root, _, files in os.walk(search_path):
@@ -249,6 +331,7 @@ LIBTELIO_CONFIG = {
         "post_build": [
             post_copy_windows_debug_symbols_to_distribution_dir,
             post_check_for_windows_static_runtime,
+            post_check_windows_debug_ids,
         ],
     },
     "android": {
@@ -289,6 +372,7 @@ LIBTELIO_CONFIG = {
         "packages": {
             NAME: {f"lib{NAME}": f"lib{NAME}.so"},
         },
+        "post_build": [post_check_android_debug_ids],
     },
     "linux": {
         "archs": {
@@ -336,6 +420,7 @@ LIBTELIO_CONFIG = {
         "post_build": [
             post_copy_libsqlite3_binary_to_dist,
             post_copy_ens_proto_to_dist,
+            post_check_linux_debug_ids,
         ],
         "packages": {
             "tcli": {"tcli": "tcli"},
@@ -351,19 +436,28 @@ LIBTELIO_CONFIG = {
             "nordvpnlite": {"nordvpnlite": "nordvpnlite"},
             NAME: {f"lib{NAME}": f"lib{NAME}.dylib"},
         },
-        "post_build": [post_copy_darwin_debug_symbols_to_distribution_dir],
+        "post_build": [
+            post_copy_darwin_debug_symbols_to_distribution_dir,
+            post_check_darwin_debug_ids,
+        ],
     },
     "ios": {
         "packages": {
             NAME: {f"lib{NAME}": f"lib{NAME}.dylib"},
         },
-        "post_build": [post_copy_darwin_debug_symbols_to_distribution_dir],
+        "post_build": [
+            post_copy_darwin_debug_symbols_to_distribution_dir,
+            post_check_darwin_debug_ids,
+        ],
     },
     "tvos": {
         "packages": {
             NAME: {f"lib{NAME}": f"lib{NAME}.dylib"},
         },
-        "post_build": [post_copy_darwin_debug_symbols_to_distribution_dir],
+        "post_build": [
+            post_copy_darwin_debug_symbols_to_distribution_dir,
+            post_check_darwin_debug_ids,
+        ],
     },
 }
 
