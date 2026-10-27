@@ -18,8 +18,10 @@ from tests.helpers import (
     setup_mesh_nodes,
     string_to_compressed_ipv6,
 )
+from tests.libtelio_client.client import Client
 from tests.utils.bindings import default_features, FeatureDns, TelioAdapterType
 from tests.utils.connection import ConnectionTag
+from tests.utils.connection.connection import Connection
 from tests.utils.connection_tracker import (
     ConntrackerEvent,
     ConnTrackerViolation,
@@ -51,6 +53,35 @@ def _dns_features(use_raw_forwarder: bool, **kwargs):
     features = default_features(**kwargs)
     features.dns.use_raw_forwarder = use_raw_forwarder
     return features
+
+
+async def setup_forwarder_test_node(
+    exit_stack: AsyncExitStack, use_raw_forwarder: bool, forward_servers: list[str]
+) -> tuple[Client, Connection]:
+    """
+    Helper to setup node for forwarder tests
+    Enables Magic DNS with forward_servers list
+    """
+    env = await setup_mesh_nodes(
+        exit_stack,
+        [
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                ip_stack=IPStack.IPv4v6,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=(1, 1),
+                ),
+                features=_dns_features(use_raw_forwarder),
+            )
+        ],
+    )
+    client = env.clients[0]
+    connection = env.connections[0].connection
+
+    await client.enable_magic_dns(forward_servers)
+
+    return (client, connection)
 
 
 # TODO: Linux native has to be removed
@@ -1176,25 +1207,9 @@ def all_cases(name: str) -> List[str]:
 @pytest.mark.parametrize("use_raw_forwarder", DNS_FORWARDER_PARAMS)
 async def test_dns_no_error_return_code(use_raw_forwarder: bool) -> None:
     async with AsyncExitStack() as exit_stack:
-
-        env = await setup_mesh_nodes(
-            exit_stack,
-            [
-                SetupParameters(
-                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    ip_stack=IPStack.IPv4v6,
-                    connection_tracker_config=generate_connection_tracker_config(
-                        ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        derp_1_limits=(1, 1),
-                    ),
-                    features=_dns_features(use_raw_forwarder),
-                )
-            ],
+        _, connection_alpha = await setup_forwarder_test_node(
+            exit_stack, use_raw_forwarder, [DNS_SERVER_2_IP, DNS_SERVER_1_IP]
         )
-        client_alpha = env.clients[0]
-        connection_alpha = env.connections[0].connection
-
-        await client_alpha.enable_magic_dns([DNS_SERVER_2_IP, DNS_SERVER_1_IP])
 
         await query_dns_port(
             connection_alpha,
@@ -1211,22 +1226,11 @@ async def test_dns_upstream_tcp_fallback() -> None:
         TRUNCATED_FLAG = r";; flags:[^;]*\btc\b"
         TCP_ONLY_RECORD = r'"tcp-only-a+" "b{255}" "c{100}"'
 
-        env = await setup_mesh_nodes(
+        _, connection_alpha = await setup_forwarder_test_node(
             exit_stack,
-            [
-                SetupParameters(
-                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    ip_stack=IPStack.IPv4v6,
-                    connection_tracker_config=generate_connection_tracker_config(
-                        ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        derp_1_limits=(1, 1),
-                    ),
-                    features=_dns_features(use_raw_forwarder=False),
-                )
-            ],
+            use_raw_forwarder=False,
+            forward_servers=[DNS_SERVER_1_IP],
         )
-        client_alpha = env.clients[0]
-        connection_alpha = env.connections[0].connection
 
         # Control check
         await query_dns_port(
@@ -1237,8 +1241,6 @@ async def test_dns_upstream_tcp_fallback() -> None:
             extra_host_options=["TXT", "+ignore"],
             expected_output=[TRUNCATED_FLAG, "ANSWER: 0"],
         )
-
-        await client_alpha.enable_magic_dns([DNS_SERVER_1_IP])
 
         await query_dns_port(
             connection_alpha,
@@ -1266,24 +1268,9 @@ async def test_dns_upstream_tcp_fallback() -> None:
 @pytest.mark.parametrize("use_raw_forwarder", DNS_FORWARDER_PARAMS)
 async def test_dns_no_reply_when_all_upstreams_silent(use_raw_forwarder: bool) -> None:
     async with AsyncExitStack() as exit_stack:
-        env = await setup_mesh_nodes(
-            exit_stack,
-            [
-                SetupParameters(
-                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    ip_stack=IPStack.IPv4v6,
-                    connection_tracker_config=generate_connection_tracker_config(
-                        ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        derp_1_limits=(1, 1),
-                    ),
-                    features=_dns_features(use_raw_forwarder),
-                )
-            ],
+        _, connection_alpha = await setup_forwarder_test_node(
+            exit_stack, use_raw_forwarder, [DNS_SERVER_1_IP, DNS_SERVER_2_IP]
         )
-        client_alpha = env.clients[0]
-        connection_alpha = env.connections[0].connection
-
-        await client_alpha.enable_magic_dns([DNS_SERVER_1_IP, DNS_SERVER_2_IP])
 
         # Positive control
         await query_dns_port(
@@ -1306,24 +1293,9 @@ async def test_dns_no_reply_when_all_upstreams_silent(use_raw_forwarder: bool) -
 @pytest.mark.parametrize("use_raw_forwarder", DNS_FORWARDER_PARAMS)
 async def test_dns_failover_to_healthy_upstream(use_raw_forwarder: bool) -> None:
     async with AsyncExitStack() as exit_stack:
-        env = await setup_mesh_nodes(
-            exit_stack,
-            [
-                SetupParameters(
-                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    ip_stack=IPStack.IPv4v6,
-                    connection_tracker_config=generate_connection_tracker_config(
-                        ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        derp_1_limits=(1, 1),
-                    ),
-                    features=_dns_features(use_raw_forwarder),
-                )
-            ],
+        _, connection_alpha = await setup_forwarder_test_node(
+            exit_stack, use_raw_forwarder, [DNS_SERVER_1_IP, DNS_SERVER_2_IP]
         )
-        client_alpha = env.clients[0]
-        connection_alpha = env.connections[0].connection
-
-        await client_alpha.enable_magic_dns([DNS_SERVER_2_IP, DNS_SERVER_1_IP])
 
         # hickory orders upstreams by stats seeded with a random RTT,
         # only the raw forwarder is guaranteed to hit the silent server first
@@ -1344,24 +1316,9 @@ async def test_dns_non_recursive_query_dropped_or_answered(
     use_raw_forwarder: bool,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        env = await setup_mesh_nodes(
-            exit_stack,
-            [
-                SetupParameters(
-                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    ip_stack=IPStack.IPv4v6,
-                    connection_tracker_config=generate_connection_tracker_config(
-                        ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        derp_1_limits=(1, 1),
-                    ),
-                    features=_dns_features(use_raw_forwarder),
-                )
-            ],
+        _, connection_alpha = await setup_forwarder_test_node(
+            exit_stack, use_raw_forwarder, [DNS_SERVER_1_IP]
         )
-        client_alpha = env.clients[0]
-        connection_alpha = env.connections[0].connection
-
-        await client_alpha.enable_magic_dns([DNS_SERVER_1_IP])
 
         # Positive control
         await query_dns_port(
@@ -1414,24 +1371,9 @@ async def test_dns_dropped_responses_not_logged_as_warn(
     use_raw_forwarder: bool, wrong_id_log: str, malformed_log: str
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        env = await setup_mesh_nodes(
-            exit_stack,
-            [
-                SetupParameters(
-                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    ip_stack=IPStack.IPv4v6,
-                    connection_tracker_config=generate_connection_tracker_config(
-                        ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        derp_1_limits=(1, 1),
-                    ),
-                    features=_dns_features(use_raw_forwarder),
-                )
-            ],
+        client_alpha, connection_alpha = await setup_forwarder_test_node(
+            exit_stack, use_raw_forwarder, [DNS_SERVER_1_IP]
         )
-        client_alpha = env.clients[0]
-        connection_alpha = env.connections[0].connection
-
-        await client_alpha.enable_magic_dns([DNS_SERVER_1_IP])
 
         # The upstream sends a junk datagram before the real reply.
         for name, dropped_log in [
