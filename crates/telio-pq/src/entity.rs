@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -16,6 +16,8 @@ struct Peer {
     pubkey: telio_crypto::PublicKey,
     wg_secret: telio_crypto::SecretKey,
     addr: SocketAddr,
+    /// Override for the default PQ upgrader IP.
+    pq_upgrader_ip: Option<Ipv4Addr>,
     /// This is a key rotation task guard, its `Drop` implementation aborts the task
     _rotation_task: super::conn::ConnKeyRotation,
     keys: Option<super::Keys>,
@@ -109,9 +111,10 @@ impl Entity {
         addr: SocketAddr,
         wg_secret: telio_crypto::SecretKey,
         peer: telio_crypto::PublicKey,
+        pq_upgrader_ip: Option<Ipv4Addr>,
     ) {
         self.stop().await;
-        self.start_impl(addr, wg_secret, peer).await;
+        self.start_impl(addr, wg_secret, peer, pq_upgrader_ip).await;
     }
 
     /// Restart the key-rotation task without clearing the existing keys.
@@ -135,6 +138,7 @@ impl Entity {
                 p.wg_secret.clone(),
                 p.pubkey,
                 &self.features,
+                p.pq_upgrader_ip,
             );
         }
     }
@@ -173,7 +177,7 @@ impl Entity {
         };
         if let Some(peer) = peer {
             telio_log_debug!("Restarting postquantum entity");
-            self.start_impl(peer.addr, peer.wg_secret, peer.pubkey)
+            self.start_impl(peer.addr, peer.wg_secret, peer.pubkey, peer.pq_upgrader_ip)
                 .await;
         }
     }
@@ -183,11 +187,13 @@ impl Entity {
         addr: SocketAddr,
         wg_secret: telio_crypto::SecretKey,
         peer: telio_crypto::PublicKey,
+        pq_upgrader_ip: Option<Ipv4Addr>,
     ) {
         *self.peer.lock() = Some(Peer {
             pubkey: peer,
             wg_secret: wg_secret.clone(),
             addr,
+            pq_upgrader_ip,
             _rotation_task: super::conn::ConnKeyRotation::run(
                 self.chan.clone(),
                 self.sockets.clone(),
@@ -195,6 +201,7 @@ impl Entity {
                 wg_secret,
                 peer,
                 &self.features,
+                pq_upgrader_ip,
             ),
             keys: None,
             last_key_fetch_ts: None,

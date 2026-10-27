@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use ipnet::IpNet;
 use parking_lot::Mutex;
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, SocketAddr};
 use telio_crypto::PublicKey;
 use telio_model::cipher::Cipher;
 
@@ -49,6 +49,10 @@ pub struct ConnectionConfig {
     /// Ciphers supported by the VPN server.
     /// Only meaningful for VPN connections; always `None` for meshnet connections.
     pub supported_ciphers: Option<Vec<Cipher>>,
+    /// Override the default PQ upgrader IP used for post-quantum key exchange.
+    /// When `None`, the default `10.5.0.1` is used.
+    /// Only meaningful for VPN connections with post-quantum enabled.
+    pub pq_upgrader_ip: Option<Ipv4Addr>,
 }
 
 pub struct VpnConnectionConfigBuilder {
@@ -70,6 +74,7 @@ impl VpnConnectionConfigBuilder {
                 endpoint: Some(endpoint),
                 post_quantum: false,
                 supported_ciphers: None,
+                pq_upgrader_ip: None,
             }),
         }
     }
@@ -101,6 +106,13 @@ impl VpnConnectionConfigBuilder {
         self
     }
 
+    /// Override the default PQ upgrader IP used for post-quantum key exchange.
+    /// Has no effect unless post-quantum is enabled via [`force_pq`](Self::force_pq).
+    pub fn with_custom_pq_upgrader_ip(self: Arc<Self>, ip: Ipv4Addr) -> Arc<Self> {
+        self.config.lock().pq_upgrader_ip = Some(ip);
+        self
+    }
+
     /// Build the final [`ConnectionConfig`].
     pub fn build(self: Arc<Self>) -> ConnectionConfig {
         let guard = self.config.lock();
@@ -111,6 +123,7 @@ impl VpnConnectionConfigBuilder {
             endpoint: guard.endpoint,
             post_quantum: guard.post_quantum,
             supported_ciphers: guard.supported_ciphers.clone(),
+            pq_upgrader_ip: guard.pq_upgrader_ip,
         }
     }
 }
@@ -133,6 +146,7 @@ impl MeshnetConnectionConfigBuilder {
                 endpoint: None,
                 post_quantum: false,
                 supported_ciphers: None,
+                pq_upgrader_ip: None,
             }),
         }
     }
@@ -154,6 +168,7 @@ impl MeshnetConnectionConfigBuilder {
             endpoint: None,
             post_quantum: false,
             supported_ciphers: None,
+            pq_upgrader_ip: None,
         }
     }
 }
@@ -194,6 +209,7 @@ mod tests {
         assert!(config.allowed_ips.is_none());
         assert!(!config.post_quantum);
         assert!(config.supported_ciphers.is_none());
+        assert!(config.pq_upgrader_ip.is_none());
     }
 
     #[test]
@@ -257,6 +273,17 @@ mod tests {
         );
     }
 
+    fn vpn_builder_with_custom_pq_upgrader_ip() {
+        let pk = test_public_key();
+        let ep = test_endpoint();
+        let custom_ip = Ipv4Addr::new(192, 168, 100, 1);
+        let config = Arc::new(VpnConnectionConfigBuilder::new(pk, ep))
+            .with_custom_pq_upgrader_ip(custom_ip)
+            .build();
+
+        assert_eq!(config.pq_upgrader_ip, Some(custom_ip));
+    }
+
     // MeshnetConnectionConfigBuilder
 
     #[test]
@@ -273,6 +300,7 @@ mod tests {
         assert!(config.allowed_ips.is_none());
         assert!(!config.post_quantum, "meshnet must never use post-quantum");
         assert!(config.supported_ciphers.is_none());
+        assert!(config.pq_upgrader_ip.is_none());
     }
 
     #[test]
