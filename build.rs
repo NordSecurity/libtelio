@@ -3,6 +3,8 @@ use std::env;
 use std::path::PathBuf;
 use std::process::Command;
 
+const BUILD_ID_LINK_ARG: &str = "-Wl,--build-id=sha1";
+
 fn check_git_secrets() -> Result<()> {
     match Command::new("git").args(["secrets", "--list"]).output() {
         Ok(output) => match output.status.code() {
@@ -110,10 +112,12 @@ fn main() -> Result<()> {
         let pkg_name = env!("CARGO_PKG_NAME");
         let soname = format!("lib{pkg_name}.so");
         println!("cargo:rustc-cdylib-link-arg=-Wl,-z,max-page-size=16384,-soname,{soname}");
+        println!("cargo:rustc-cdylib-link-arg={BUILD_ID_LINK_ARG}");
     } else if target_os == "linux" {
         let pkg_name = env!("CARGO_PKG_NAME");
         let soname = format!("lib{pkg_name}.so");
         println!("cargo:rustc-cdylib-link-arg=-Wl,-soname,{soname}");
+        println!("cargo:rustc-cdylib-link-arg={BUILD_ID_LINK_ARG}");
     }
 
     #[cfg(windows)]
