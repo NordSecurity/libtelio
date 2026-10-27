@@ -6349,7 +6349,7 @@ dependencies = [
 [[package]]
 name = "wireguard-nt"
 version = "1.0.0"
-source = "git+https://github.com/NordSecurity/wireguard-nt-rust-wrapper.git?tag=v1.5.0#a26d3195316c0a6ab319e311c0e6e4ebff1455d4"
+source = "git+https://github.com/NordSecurity/wireguard-nt-rust-wrapper.git?branch=kumor%2FLLT-7851-update-dependencies#1dcea8b07a45d4dd45ba027cc3134957a8c2d40e"
 dependencies = [
  "bitflags 2.13.2",
  "getrandom 0.4.3",
@@ -6367,7 +6367,7 @@ dependencies = [
 [[package]]
 name = "wireguard-uapi"
 version = "4.0.0"
-source = "git+https://github.com/NordSecurity/wireguard-uapi-rs.git?rev=47f0275ca3a1358402021b61bdf3ac23880d5661#47f0275ca3a1358402021b61bdf3ac23880d5661"
+source = "git+https://github.com/NordSecurity/wireguard-uapi-rs.git?branch=kumor%2FLLT-7851-iana-ciphers-naming-convention#e49c029c634cbce9c015d1765e981fca4b945bbd"
 dependencies = [
  "derive_builder 0.10.2",
  "hex",

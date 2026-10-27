@@ -23,13 +23,19 @@ pub enum Cipher {
     Aegis256x4,
 }
 
+/// Supported IANA registry AEAD cipher names
+const CIPHER_CHACHA20POLY1305: &str = "AEAD_CHACHA20_POLY1305";
+const CIPHER_AEGIS256: &str = "AEAD_AEGIS256";
+const CIPHER_AEGIS256X2: &str = "AEAD_AEGIS256X2";
+const CIPHER_AEGIS256X4: &str = "AEAD_AEGIS256X4";
+
 impl fmt::Display for Cipher {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Cipher::Chacha20Poly1305 => "chacha20poly1305",
-            Cipher::Aegis256 => "aegis256",
-            Cipher::Aegis256x2 => "aegis256x2",
-            Cipher::Aegis256x4 => "aegis256x4",
+            Cipher::Chacha20Poly1305 => CIPHER_CHACHA20POLY1305,
+            Cipher::Aegis256 => CIPHER_AEGIS256,
+            Cipher::Aegis256x2 => CIPHER_AEGIS256X2,
+            Cipher::Aegis256x4 => CIPHER_AEGIS256X4,
         })
     }
 }
@@ -51,10 +57,10 @@ impl FromStr for Cipher {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim() {
-            "chacha20poly1305" => Ok(Cipher::Chacha20Poly1305),
-            "aegis256" => Ok(Cipher::Aegis256),
-            "aegis256x2" => Ok(Cipher::Aegis256x2),
-            "aegis256x4" => Ok(Cipher::Aegis256x4),
+            CIPHER_CHACHA20POLY1305 => Ok(Cipher::Chacha20Poly1305),
+            CIPHER_AEGIS256 => Ok(Cipher::Aegis256),
+            CIPHER_AEGIS256X2 => Ok(Cipher::Aegis256x2),
+            CIPHER_AEGIS256X4 => Ok(Cipher::Aegis256x4),
             other => Err(UnknownCipher(other.to_string())),
         }
     }
@@ -62,18 +68,19 @@ impl FromStr for Cipher {
 
 /// Parse a comma-separated list of cipher names into a [`Vec<Cipher>`].
 ///
-/// Unknown cipher names are ignored with a warning. Duplicate cipher names are
+/// Unknown cipher names are ignored. Duplicate cipher names are
 /// silently deduplicated. Parser is case-sensitive.
+/// Cipher names shall follow IANA registry AEAD ciphers naming convention.
 ///
 /// ```
 /// use telio_model::cipher::{parse_ciphers, Cipher};
 ///
 /// // Unknown tokens are skipped.
-/// let ciphers = parse_ciphers("chacha20poly1305, aegis256, unknown".to_string());
+/// let ciphers = parse_ciphers("AEAD_CHACHA20_POLY1305, AEAD_AEGIS256, unknown".to_string());
 /// assert_eq!(ciphers, vec![Cipher::Chacha20Poly1305, Cipher::Aegis256]);
 ///
 /// // Duplicates produce a single entry; order of first occurrence is preserved.
-/// let ciphers = parse_ciphers("aegis256, aegis256, chacha20poly1305".to_string());
+/// let ciphers = parse_ciphers("AEAD_AEGIS256, AEAD_AEGIS256, AEAD_CHACHA20_POLY1305".to_string());
 /// assert_eq!(ciphers, vec![Cipher::Aegis256, Cipher::Chacha20Poly1305]);
 /// ```
 pub fn parse_ciphers(ciphers: String) -> Vec<Cipher> {
@@ -100,10 +107,10 @@ mod tests {
     #[test]
     fn display_and_from_str_round_trip() {
         let variants = [
-            (Cipher::Chacha20Poly1305, "chacha20poly1305"),
-            (Cipher::Aegis256, "aegis256"),
-            (Cipher::Aegis256x2, "aegis256x2"),
-            (Cipher::Aegis256x4, "aegis256x4"),
+            (Cipher::Chacha20Poly1305, "AEAD_CHACHA20_POLY1305"),
+            (Cipher::Aegis256, "AEAD_AEGIS256"),
+            (Cipher::Aegis256x2, "AEAD_AEGIS256X2"),
+            (Cipher::Aegis256x4, "AEAD_AEGIS256X4"),
         ];
         for (cipher, wire) in &variants {
             assert_eq!(cipher.to_string(), *wire, "Display mismatch for {cipher:?}");
@@ -125,36 +132,38 @@ mod tests {
     #[test]
     fn parse_ciphers_deduplicates() {
         // Exact duplicate: only first occurrence kept.
-        let result = parse_ciphers("aegis256,aegis256".to_string());
+        let result = parse_ciphers("AEAD_AEGIS256,AEAD_AEGIS256".to_string());
         assert_eq!(result, vec![Cipher::Aegis256]);
 
         // Duplicate interleaved with another cipher: order of first occurrence preserved.
-        let result = parse_ciphers("chacha20poly1305,aegis256,chacha20poly1305".to_string());
+        let result = parse_ciphers(
+            "AEAD_CHACHA20_POLY1305,AEAD_AEGIS256,AEAD_CHACHA20_POLY1305".to_string(),
+        );
         assert_eq!(result, vec![Cipher::Chacha20Poly1305, Cipher::Aegis256]);
 
         // All-duplicate input: single entry remains.
-        let result = parse_ciphers("aegis256x4,aegis256x4,aegis256x4".to_string());
+        let result = parse_ciphers("AEAD_AEGIS256X4,AEAD_AEGIS256X4,AEAD_AEGIS256X4".to_string());
         assert_eq!(result, vec![Cipher::Aegis256x4]);
     }
 
     #[test]
     fn parse_ciphers_skips_unknown_tokens() {
-        let result = parse_ciphers("chacha20poly1305, aegis256, unknown".to_string());
+        let result = parse_ciphers("AEAD_CHACHA20_POLY1305, AEAD_AEGIS256, unknown".to_string());
         assert_eq!(result, vec![Cipher::Chacha20Poly1305, Cipher::Aegis256]);
     }
 
     #[test]
     fn parse_ciphers_trims_whitespace_and_skips_empty_tokens() {
-        let result = parse_ciphers("  chacha20poly1305  ,  aegis256  ".to_string());
+        let result = parse_ciphers("  AEAD_CHACHA20_POLY1305  ,  AEAD_AEGIS256  ".to_string());
         assert_eq!(result, vec![Cipher::Chacha20Poly1305, Cipher::Aegis256]);
 
-        let result = parse_ciphers("aegis256x2,".to_string());
+        let result = parse_ciphers("AEAD_AEGIS256X2,".to_string());
         assert_eq!(result, vec![Cipher::Aegis256x2]);
 
-        let result = parse_ciphers("chacha20poly1305,,aegis256x4".to_string());
+        let result = parse_ciphers("AEAD_CHACHA20_POLY1305,,AEAD_AEGIS256X4".to_string());
         assert_eq!(result, vec![Cipher::Chacha20Poly1305, Cipher::Aegis256x4]);
 
-        let result = parse_ciphers("aegis256, ,aegis256x2".to_string());
+        let result = parse_ciphers("AEAD_AEGIS256, ,AEAD_AEGIS256X2".to_string());
         assert_eq!(result, vec![Cipher::Aegis256, Cipher::Aegis256x2]);
 
         assert!(parse_ciphers("   ".to_string()).is_empty());
