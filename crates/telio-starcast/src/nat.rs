@@ -40,6 +40,8 @@ pub trait Nat {
 
 type Mapper = fn(src_addr: SocketAddr) -> u16;
 
+const MIN_NAT_PORT: u16 = 1024;
+
 fn default_mapper(src_addr: SocketAddr) -> u16 {
     let mut hasher = DefaultHasher::new();
     match src_addr.ip() {
@@ -47,7 +49,12 @@ fn default_mapper(src_addr: SocketAddr) -> u16 {
         IpAddr::V6(src_ip) => Hash::hash_slice(&src_ip.octets(), &mut hasher),
     };
     src_addr.port().hash(&mut hasher);
-    hasher.finish() as u16
+    hash_to_port(hasher.finish())
+}
+
+fn hash_to_port(hash: u64) -> u16 {
+    let port_range = u64::from(u16::MAX - MIN_NAT_PORT) + 1;
+    MIN_NAT_PORT + (hash % port_range) as u16
 }
 
 pub struct StarcastNat {
@@ -586,5 +593,27 @@ mod tests {
 
         let mut incoming = make_udp_v4(&src_addr_2, &dst_addr);
         assert_err!(nat.translate_incoming(&mut incoming), Error::CannotMap);
+    }
+
+    #[test]
+    fn hash_to_port_produces_expected_port_range() {
+        let port_range = u64::from(u16::MAX - MIN_NAT_PORT) + 1;
+        let mut produced = vec![false; usize::from(u16::MAX) + 1];
+        for hash in 0..port_range {
+            produced[usize::from(hash_to_port(hash))] = true;
+        }
+
+        for (port, produced) in produced.into_iter().enumerate() {
+            assert_eq!(
+                produced,
+                port >= usize::from(MIN_NAT_PORT),
+                "unexpected mapping result for port {port}"
+            );
+        }
+
+        assert_eq!(hash_to_port(0), MIN_NAT_PORT);
+        assert_eq!(hash_to_port(port_range - 1), u16::MAX);
+        assert_eq!(hash_to_port(port_range), MIN_NAT_PORT);
+        assert_eq!(hash_to_port(u64::MAX), MIN_NAT_PORT + 1023);
     }
 }
