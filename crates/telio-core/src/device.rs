@@ -3140,6 +3140,10 @@ mod tests {
         let wg = AdapterError::from(wg::ErrorVariant::UnsupportedAdapter);
         assert_kept(wg.backtrace(), wg.into());
 
+        let uapi =
+            wg::uapi::Error::from(wg::uapi::ErrorVariant::ParsingError("cmd", String::new()));
+        assert_kept(uapi.backtrace(), AdapterError::from(uapi).into());
+
         let wg = AdapterError::from(wg::ErrorVariant::UnsupportedAdapter);
         assert_kept(wg.backtrace(), endpoint_providers::Error::from(wg).into());
 
