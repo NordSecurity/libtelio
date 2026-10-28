@@ -1,6 +1,6 @@
 use crate::endpoint_providers::{
     EndpointCandidate, EndpointCandidatesChangeEvent, EndpointProvider, EndpointProviderType,
-    Error, PongEvent,
+    Error, ErrorVariant, PongEvent,
 };
 use crate::ping_pong_handler::PingPongHandler;
 use async_trait::async_trait;
@@ -101,7 +101,7 @@ impl IgdGateway {
     fn maybe_gw(&self) -> Result<&Gateway> {
         match &self.gw {
             Some(gw) => Ok(gw),
-            None => Err(Error::NoIGDGateway),
+            None => Err(ErrorVariant::NoIGDGateway.into()),
         }
     }
 }
@@ -126,9 +126,10 @@ impl UpnpEpCommands for IgdGateway {
                 return Ok(self.lease_needs_renew());
             }
         }
-        Err(Error::IGDError(
+        Err(ErrorVariant::IGDError(
             igd::GetGenericPortMappingEntryError::SpecifiedArrayIndexInvalid,
-        ))
+        )
+        .into())
     }
 
     async fn extend_endpoint_duration(
@@ -217,7 +218,7 @@ impl UpnpEpCommands for IgdGateway {
 
         match gw.get_external_ip().await {
             Ok(ip) => Ok(ip),
-            Err(_e) => Err(Error::NoIGDGateway),
+            Err(_e) => Err(ErrorVariant::NoIGDGateway.into()),
         }
     }
 
@@ -349,7 +350,7 @@ fn get_my_local_endpoints(igd_ip: Ipv4Addr) -> std::result::Result<Ipv4Addr, Err
                 _ => None,
             }
         })
-        .ok_or(Error::NoMatchingLocalEndpoint)
+        .ok_or_else(|| ErrorVariant::NoMatchingLocalEndpoint.into())
 }
 
 impl<Wg: WireGuard> UpnpEndpointProvider<Wg> {
@@ -589,12 +590,12 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
         public_key: &PublicKey,
     ) -> Result<()> {
         if self.is_endpoint_provider_paused {
-            return Err(Error::EndpointProviderPaused);
+            return Err(ErrorVariant::EndpointProviderPaused.into());
         }
         let wg_port = if let Some(port) = self.get_wg_port() {
             port
         } else {
-            return Err(Error::NoWGListenPort);
+            return Err(ErrorVariant::NoWGListenPort.into());
         };
         self.ping_pong_handler
             .lock()
@@ -616,7 +617,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
         if self.endpoint_candidate.is_none() {
             self.igd_gw.drop_igd_gateway();
 
-            return Err(Error::NoIGDGateway);
+            return Err(ErrorVariant::NoIGDGateway.into());
         };
 
         match self.is_current_endpoint_valid().await {
@@ -651,7 +652,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
 
                 self.igd_gw.drop_igd_gateway();
 
-                return Err(Error::NoIGDGateway);
+                return Err(ErrorVariant::NoIGDGateway.into());
             }
         };
 
@@ -730,7 +731,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
         let wg_port = if let Some(port) = self.get_wg_port() {
             port
         } else {
-            return Err(Error::NoWGListenPort);
+            return Err(ErrorVariant::NoWGListenPort.into());
         };
 
         self.ping_pong_handler
@@ -828,7 +829,7 @@ mod tests {
         time::Duration,
     };
 
-    use crate::endpoint_providers::Error;
+    use crate::endpoint_providers::{Error, ErrorVariant};
     use crate::ping_pong_handler::PingPongHandler;
     use lazy_static::lazy_static;
     use parking_lot::Mutex;
@@ -860,7 +861,7 @@ mod tests {
         if ENDPOINT.lock().wg.port() == wg && ENDPOINT.lock().udp.port() == proxy {
             return Ok(false);
         }
-        Err(Error::FailedToGetUpnpService)
+        Err(ErrorVariant::FailedToGetUpnpService.into())
     }
 
     fn add_endpoint(wg: u16, proxy: u16) -> Result<()> {
@@ -1110,10 +1111,11 @@ mod tests {
         mock.expect_ensure_igd_gateway().returning(move || {
             igd_search_counter_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-            Err(Error::IGDSearchError(igd::SearchError::SpoofedIp {
+            Err(ErrorVariant::IGDSearchError(igd::SearchError::SpoofedIp {
                 src_ip: "1.2.3.4".parse().unwrap(),
                 url_ip: "5.6.7.8".parse().unwrap(),
-            }))
+            })
+            .into())
         });
 
         mock.expect_get_external_ip().returning(get_external_ip);

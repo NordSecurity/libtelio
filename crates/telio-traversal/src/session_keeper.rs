@@ -11,9 +11,9 @@ use telio_utils::{
     DualTarget, RepeatedActions, dual_target, repeated_actions, telio_log_debug, telio_log_warn,
 };
 
-/// Possible [SessionKeeper] errors.
+/// Kind of the [SessionKeeper] error
 #[derive(thiserror::Error, Debug)]
-pub enum Error {
+pub enum ErrorVariant {
     /// `UdpProxy` `IoError`
     #[error(transparent)]
     IoError(#[from] std::io::Error),
@@ -32,6 +32,11 @@ pub enum Error {
     // Target error
     #[error(transparent)]
     DualTargetError(#[from] dual_target::DualTargetError),
+}
+
+telio_utils::traced_error! {
+    /// Possible [SessionKeeper] errors, carries the backtrace of the place where it was created
+    pub struct Error(ErrorVariant);
 }
 
 type Result<T> = std::result::Result<T, Error>;
@@ -76,7 +81,7 @@ impl SessionKeeper {
     async fn get_pinger(&self) -> Result<Pinger> {
         task_exec!(&self.task, async move |s| Ok(s.pinger.clone()))
             .await
-            .map_err(Error::Task)
+            .map_err(Error::from)
     }
 }
 
@@ -88,7 +93,7 @@ impl SessionKeeperTrait for SessionKeeper {
         target: dual_target::Target,
         interval: Duration,
     ) -> Result<()> {
-        let dual_target = DualTarget::new(target).map_err(Error::DualTargetError)?;
+        let dual_target = DualTarget::new(target).map_err(ErrorVariant::DualTargetError)?;
 
         telio_log_debug!("Add peer: {} with interval: {:?}", public_key, interval);
 
@@ -115,8 +120,8 @@ impl SessionKeeperTrait for SessionKeeper {
             ))
         })
         .await
-        .map_err(Error::Task)?
-        .map_err(Error::RepeatedActionError)?;
+        .map_err(ErrorVariant::Task)?
+        .map_err(ErrorVariant::RepeatedActionError)?;
 
         telio_log_debug!("Added {}", public_key);
         Ok(())
@@ -139,7 +144,7 @@ impl SessionKeeperTrait for SessionKeeper {
             Ok(())
         })
         .await
-        .map_err(Error::Task)
+        .map_err(Error::from)
     }
 }
 

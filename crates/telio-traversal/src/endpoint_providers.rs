@@ -15,7 +15,7 @@ use telio_proto::{PlaintextPongerMsg, Session};
 use telio_task::io::chan;
 
 #[derive(Debug, TError)]
-pub enum Error {
+pub enum ErrorVariant {
     #[error(transparent)]
     PrefixLenError(#[from] PrefixLenError),
     #[error(transparent)]
@@ -80,6 +80,14 @@ pub enum Error {
     /// Did not find matching endpoint with the IGD subnet
     #[error("No endpoint with matching subnet to IGD")]
     NoMatchingLocalEndpoint,
+}
+
+telio_utils::traced_error! {
+    /// Endpoint provider error, carries the backtrace of the place where it was created
+    pub struct Error(ErrorVariant);
+    reuse_backtrace {
+        ErrorVariant::WireGuardError(e) => e,
+    }
 }
 
 #[derive(PartialEq, Eq, Hash, Debug, Copy, Clone, Enum)]

@@ -2,7 +2,7 @@ use crate::ping_pong_handler::PingPongHandler;
 
 use super::{
     EndpointCandidate, EndpointCandidatesChangeEvent, EndpointProvider, EndpointProviderType,
-    Error, PongEvent,
+    Error, ErrorVariant, PongEvent,
 };
 use async_trait::async_trait;
 use futures::Future;
@@ -155,7 +155,7 @@ impl<T: WireGuard, G: GetIfAddrs> State<T, G> {
             Ok(wg_port)
         } else {
             telio_log_warn!("Skipping local interfaces poll due to missing wg_port");
-            Err(Error::NoWGListenPort)
+            Err(ErrorVariant::NoWGListenPort.into())
         }
     }
 

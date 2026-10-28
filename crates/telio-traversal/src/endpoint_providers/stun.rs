@@ -22,7 +22,10 @@ use tokio::{net::UdpSocket, pin, sync::Mutex};
 
 use crate::{endpoint_providers::EndpointProviderType, ping_pong_handler::PingPongHandler};
 
-use super::{EndpointCandidate, EndpointCandidatesChangeEvent, EndpointProvider, Error, PongEvent};
+use super::{
+    EndpointCandidate, EndpointCandidatesChangeEvent, EndpointProvider, Error, ErrorVariant,
+    PongEvent,
+};
 
 pub type StunServer = telio_model::config::Server;
 
@@ -453,7 +456,7 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
         if let Some(sockets) = self.sockets.as_ref() {
             if self.stun_session.is_none() {
                 let (wg, udp) = self.get_stun_endpoints().await?;
-                let int_socket = self.get_socket().ok_or(Error::StunNotConfigured)?;
+                let int_socket = self.get_socket().ok_or(ErrorVariant::StunNotConfigured)?;
                 self.stun_session =
                     Some(StunSession::start(int_socket, wg, &sockets.ext_socket, udp).await?);
                 self.current_timeout = PinnedSleep::new(STUN_TIMEOUT, ());
@@ -461,7 +464,7 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
 
             Ok(())
         } else {
-            Err(Error::StunNotConfigured)
+            Err(ErrorVariant::StunNotConfigured.into())
         }
     }
 
@@ -484,7 +487,7 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
                 )
                 .await
         } else {
-            Err(Error::StunNotConfigured)
+            Err(ErrorVariant::StunNotConfigured.into())
         }
     }
 
@@ -547,7 +550,7 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
                 let stun_peer = interface
                     .peers
                     .get(&server.public_key)
-                    .ok_or(Error::NoStunPeer)?;
+                    .ok_or(ErrorVariant::NoStunPeer)?;
 
                 let wg_ip = stun_peer
                     .allowed_ips
@@ -559,20 +562,20 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
                             addr.addr().is_ipv4()
                         }
                     })
-                    .ok_or(Error::BadStunPeer)?
+                    .ok_or(ErrorVariant::BadStunPeer)?
                     .addr();
 
-                let udp_ip = stun_peer.endpoint.ok_or(Error::BadStunPeer)?.ip();
+                let udp_ip = stun_peer.endpoint.ok_or(ErrorVariant::BadStunPeer)?.ip();
 
                 Ok((
                     (wg_ip, server.stun_port).into(),
                     (udp_ip, server.stun_plaintext_port).into(),
                 ))
             } else {
-                Err(Error::NoStunPeer)
+                Err(ErrorVariant::NoStunPeer.into())
             }
         } else {
-            Err(Error::StunNotConfigured)
+            Err(ErrorVariant::StunNotConfigured.into())
         }
     }
 
@@ -629,7 +632,7 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
                 )
                 .await
         } else {
-            Err(Error::StunNotConfigured)
+            Err(ErrorVariant::StunNotConfigured.into())
         }
     }
 
@@ -902,12 +905,12 @@ impl StunSession {
 
         if let Err(err) = socket_via_wg.send_to(&wg_stun.1, wg).await {
             telio_log_debug!("wg stun send_to error");
-            return Err(Error::IOError(err));
+            return Err(ErrorVariant::IOError(err).into());
         }
 
         if let Err(err) = socket_via_ext.send_to(&udp_stun.1, udp).await {
             telio_log_debug!("plain stun send_to error");
-            return Err(Error::IOError(err));
+            return Err(ErrorVariant::IOError(err).into());
         }
 
         Ok(Self {
