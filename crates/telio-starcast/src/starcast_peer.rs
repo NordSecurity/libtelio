@@ -5,7 +5,6 @@ use ipnet::IpNet;
 use neptun::noise::{Tunn, TunnResult};
 use std::{net::SocketAddr, time::Duration};
 use telio_crypto::{PublicKey, SecretKey};
-use telio_proto::DataMsg;
 use telio_task::{
     io::{wait_for_tx, Chan},
     task_exec, Runtime, RuntimeExt, Task, WaitResponse,
@@ -13,7 +12,7 @@ use telio_task::{
 use telio_utils::interval;
 use telio_utils::{telio_log_error, telio_log_info, telio_log_warn};
 use telio_wg::uapi::Peer;
-use tokio::{net::UdpSocket, sync::mpsc::error::SendTimeoutError, time::Interval};
+use tokio::{net::UdpSocket, time::Interval};
 use x25519_dalek::{PublicKey as PublicKeyDalek, StaticSecret};
 
 use telio_model::constants::{
@@ -28,6 +27,7 @@ const MAX_PACKET: usize = 2048;
 pub enum Error {
     /// `StarcastPeer` Not Configured Error
     #[error("Starcast peer is not configured")]
+    #[cfg(debug_assertions)]
     NotConfigured,
     /// `StarcastPeer` `IoError`
     #[error("Starcast peer IoError")]
@@ -37,10 +37,12 @@ pub enum Error {
     Task(#[from] telio_task::ExecError),
     /// IP network failed
     #[error("Failed to parse IP network")]
+    #[cfg(debug_assertions)]
     IpNetworkError(#[from] ipnet::AddrParseError),
     /// Send failed
     #[error(transparent)]
-    Send(#[from] SendTimeoutError<(PublicKey, DataMsg)>),
+    #[cfg(debug_assertions)]
+    Send(#[from] tokio::sync::mpsc::error::SendTimeoutError<(PublicKey, telio_proto::DataMsg)>),
     /// Tunnel creation failed
     #[error("Tunnel creation failed {0}")]
     TunnNewFail(&'static str),

@@ -145,13 +145,16 @@ pub enum ErrorVariant {
 
     /// Unsupported on Windows adapter
     #[error("Mismatched windows adapter")]
+    #[cfg(debug_assertions)]
     MismatchedWindowsAdapter,
 
     /// Telio error
     #[error(transparent)]
+    #[cfg(debug_assertions)]
     Telio(#[from] std::str::Utf8Error),
     /// Serde error
     #[error(transparent)]
+    #[cfg(debug_assertions)]
     Serde(#[from] serde_json::Error),
 
     /// IO error

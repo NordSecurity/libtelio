@@ -28,6 +28,7 @@ pub struct LinuxNativeWg {
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("SetDevice: {source:?}")]
+    #[cfg(debug_assertions)]
     SetDevice {
         #[from]
         source: err::SetDeviceError,

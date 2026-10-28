@@ -19,7 +19,7 @@ use telio_task::{
     },
     task_exec, Runtime, RuntimeExt, Task, WaitResponse,
 };
-use tokio::{net::UdpSocket, sync::mpsc::error::SendTimeoutError};
+use tokio::net::UdpSocket;
 
 use telio_utils::{
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
@@ -36,6 +36,7 @@ const SOCK_BUF_SZ: usize = 212992;
 pub enum ErrorVariant {
     #[error("UdpProxy Stopped")]
     /// `UdpProxy` Stopped Error
+    #[cfg(debug_assertions)]
     Stopped,
     #[error("UdpProxy IoError")]
     /// `UdpProxy` `IoError`
@@ -45,7 +46,8 @@ pub enum ErrorVariant {
     Task(#[from] telio_task::ExecError),
     /// Send failed
     #[error(transparent)]
-    Send(#[from] SendTimeoutError<(PublicKey, DataMsg)>),
+    #[cfg(debug_assertions)]
+    Send(#[from] tokio::sync::mpsc::error::SendTimeoutError<(PublicKey, DataMsg)>),
     /// Peer not found
     #[error("Peer not found error")]
     PeerNotFound,
