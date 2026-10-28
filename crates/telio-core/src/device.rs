@@ -173,8 +173,6 @@ pub enum ErrorVariant {
     EndpointProviderError(#[from] endpoint_providers::Error),
     #[error("Multiplexer error")]
     MultiplexerError(#[from] telio_relay::multiplexer::Error),
-    #[error("Traversal error")]
-    TraversalError(#[from] telio_traversal::Error),
     #[error("Task execution error")]
     TaskExecError(#[from] telio_task::ExecError),
     #[error("Session keeper error: {0}")]
@@ -225,10 +223,10 @@ telio_utils::traced_error! {
         ErrorVariant::DnsResolverError(e) => e,
         ErrorVariant::PostQuantum(e) => e,
         ErrorVariant::ProxyError(e) => e,
-        ErrorVariant::EndpointProviderError(endpoint_providers::Error::WireGuardError(e)) => e,
-        ErrorVariant::ConnectivityCheckError(connectivity_check::Error::EndpointProviderError(
-            endpoint_providers::Error::WireGuardError(e),
-        )) => e,
+        ErrorVariant::EndpointProviderError(e) => e,
+        ErrorVariant::ConnectivityCheckError(e) => e,
+        ErrorVariant::SessionKeeperError(e) => e,
+        ErrorVariant::UpgradeSyncError(e) => e,
     }
 }
 
@@ -3143,19 +3141,32 @@ mod tests {
         assert_kept(wg.backtrace(), wg.into());
 
         let wg = AdapterError::from(wg::ErrorVariant::UnsupportedAdapter);
-        assert_kept(
-            wg.backtrace(),
-            endpoint_providers::Error::WireGuardError(wg).into(),
-        );
+        assert_kept(wg.backtrace(), endpoint_providers::Error::from(wg).into());
 
         let wg = AdapterError::from(wg::ErrorVariant::UnsupportedAdapter);
         assert_kept(
             wg.backtrace(),
-            connectivity_check::Error::EndpointProviderError(
-                endpoint_providers::Error::WireGuardError(wg),
-            )
-            .into(),
+            connectivity_check::Error::from(endpoint_providers::Error::from(wg)).into(),
         );
+
+        let endpoint_provider =
+            endpoint_providers::Error::from(endpoint_providers::ErrorVariant::NoStunPeer);
+        assert_kept(endpoint_provider.backtrace(), endpoint_provider.into());
+
+        let connectivity_check = connectivity_check::Error::from(
+            connectivity_check::ErrorVariant::UnkownSessionForRxedPongPacket,
+        );
+        assert_kept(connectivity_check.backtrace(), connectivity_check.into());
+
+        let session_keeper = telio_traversal::session_keeper::Error::from(
+            telio_traversal::session_keeper::ErrorVariant::Task(telio_task::ExecError),
+        );
+        assert_kept(session_keeper.backtrace(), session_keeper.into());
+
+        let upgrade_sync = telio_traversal::upgrade_sync::Error::from(
+            telio_traversal::upgrade_sync::ErrorVariant::NotFound,
+        );
+        assert_kept(upgrade_sync.backtrace(), upgrade_sync.into());
 
         let dns = telio_dns::error::Error::from(telio_dns::error::ErrorVariant::Stopped);
         assert_kept(dns.backtrace(), dns.into());
