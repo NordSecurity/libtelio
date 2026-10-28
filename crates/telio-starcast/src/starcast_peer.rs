@@ -39,10 +39,6 @@ pub enum Error {
     #[error("Failed to parse IP network")]
     #[cfg(debug_assertions)]
     IpNetworkError(#[from] ipnet::AddrParseError),
-    /// Send failed
-    #[error(transparent)]
-    #[cfg(debug_assertions)]
-    Send(#[from] tokio::sync::mpsc::error::SendTimeoutError<(PublicKey, telio_proto::DataMsg)>),
     /// Tunnel creation failed
     #[error("Tunnel creation failed {0}")]
     TunnNewFail(&'static str),

@@ -5029,7 +5029,6 @@ dependencies = [
  "sn_fake_clock",
  "telio-crypto",
  "telio-model",
- "telio-proto",
  "telio-sockets",
  "telio-task",
  "telio-test",
