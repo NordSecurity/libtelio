@@ -10,13 +10,18 @@ use crate::telio_log_warn;
 
 const EXPONENTIAL_BACKOFF_MULTIPLIER: u32 = 2;
 
-/// Enumeration of `Error` types for the exponential backoff implementiation
+/// Kind of the exponential backoff error
 #[derive(Debug, TError)]
-pub enum Error {
+pub enum ErrorVariant {
     /// Occurs when user provides initial bound equal to zero,
     /// or maximal bound exists and is smaller than initial one
     #[error("Invalid exponential backof bounds")]
     InvalidExponentialBackoffBounds,
+}
+
+crate::traced_error! {
+    /// Exponential backoff error, carries the backtrace of the place where it was created
+    pub struct Error(ErrorVariant);
 }
 
 /// Exponential backoff bounds
@@ -71,7 +76,7 @@ impl ExponentialBackoff {
     /// defined and is smaller than the initial one.
     pub fn new(bounds: ExponentialBackoffBounds) -> Result<Self, Error> {
         if bounds.initial == Duration::ZERO || bounds.maximal.is_some_and(|t| t < bounds.initial) {
-            return Err(Error::InvalidExponentialBackoffBounds);
+            return Err(ErrorVariant::InvalidExponentialBackoffBounds.into());
         }
         Ok(Self {
             bounds,

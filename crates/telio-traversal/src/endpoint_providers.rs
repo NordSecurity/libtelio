@@ -87,6 +87,7 @@ telio_utils::traced_error! {
     pub struct Error(ErrorVariant);
     reuse_backtrace {
         ErrorVariant::WireGuardError(e) => e,
+        ErrorVariant::ExponentialBackoffError(e) => e,
     }
 }
 
