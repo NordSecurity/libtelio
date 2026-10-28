@@ -206,6 +206,9 @@ pub enum ErrorVariant {
 telio_utils::traced_error! {
     /// Adapter error, carries the backtrace of the place where it was created
     pub struct Error(ErrorVariant);
+    reuse_backtrace {
+        ErrorVariant::UapiFailed(e) => e,
+    }
 }
 
 /// Enumeration of types for `Adapter` struct
