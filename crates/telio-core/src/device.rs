@@ -227,6 +227,7 @@ telio_utils::traced_error! {
         ErrorVariant::ConnectivityCheckError(e) => e,
         ErrorVariant::SessionKeeperError(e) => e,
         ErrorVariant::UpgradeSyncError(e) => e,
+        ErrorVariant::ExponentialBackoffError(e) => e,
     }
 }
 
@@ -3180,6 +3181,27 @@ mod tests {
 
         let proxy = telio_proxy::Error::from(telio_proxy::ErrorVariant::PeerNotFound);
         assert_kept(proxy.backtrace(), proxy.into());
+
+        let invalid_bounds = || {
+            exponential_backoff::Error::from(
+                exponential_backoff::ErrorVariant::InvalidExponentialBackoffBounds,
+            )
+        };
+
+        let backoff = invalid_bounds();
+        assert_kept(backoff.backtrace(), backoff.into());
+
+        let backoff = invalid_bounds();
+        assert_kept(
+            backoff.backtrace(),
+            endpoint_providers::Error::from(backoff).into(),
+        );
+
+        let backoff = invalid_bounds();
+        assert_kept(
+            backoff.backtrace(),
+            connectivity_check::Error::from(backoff).into(),
+        );
     }
 
     #[test]
