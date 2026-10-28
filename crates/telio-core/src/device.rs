@@ -224,6 +224,7 @@ telio_utils::traced_error! {
         ErrorVariant::Adapter(e) => e,
         ErrorVariant::DnsResolverError(e) => e,
         ErrorVariant::PostQuantum(e) => e,
+        ErrorVariant::ProxyError(e) => e,
         ErrorVariant::EndpointProviderError(endpoint_providers::Error::WireGuardError(e)) => e,
         ErrorVariant::ConnectivityCheckError(connectivity_check::Error::EndpointProviderError(
             endpoint_providers::Error::WireGuardError(e),
@@ -3161,6 +3162,9 @@ mod tests {
 
         let pq = telio_pq::Error::from("failed");
         assert_kept(pq.backtrace(), pq.into());
+
+        let proxy = telio_proxy::Error::from(telio_proxy::ErrorVariant::PeerNotFound);
+        assert_kept(proxy.backtrace(), proxy.into());
     }
 
     #[test]
