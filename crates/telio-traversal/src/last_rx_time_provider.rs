@@ -7,6 +7,7 @@ use telio_wg::{DynamicWg, WireGuard};
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Unknown peer: {0}")]
+    #[cfg(debug_assertions)]
     UnknownPeer(PublicKey),
     #[error("Unable to communicate with wireguard: {0}")]
     UnableToCommunicateWithWG(#[from] telio_wg::Error),

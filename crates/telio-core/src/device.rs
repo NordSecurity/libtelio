@@ -142,6 +142,7 @@ pub enum ErrorVariant {
     #[error("Configured exit node is not a meshnet node and does not have an endpoint set")]
     EndpointNotProvided,
     #[error("Deleting non-existent node")]
+    #[cfg(debug_assertions)]
     InvalidDelete,
     #[error("Meshnet IP is not set for the node")]
     NoMeshnetIP,
@@ -150,16 +151,20 @@ pub enum ErrorVariant {
     #[error("Failed to build async runtime {0}")]
     AsyncRuntime(#[from] IoError),
     #[error("Failed to set fwmark for WG socket")]
+    #[cfg(debug_assertions)]
     WgFwmark,
     #[error("DNS resolver error: {0}")]
     DnsResolverError(#[from] telio_dns::error::Error),
     #[error("DNS module should be disabled when executing this operation")]
     DnsNotDisabled,
     #[error("Failed to reconnect to DERP server")]
+    #[cfg(debug_assertions)]
     FailedToReconnect,
     #[error("Failed to recover information about NAT")]
+    #[cfg(debug_assertions)]
     FailedNatInfoRecover(std::io::Error),
     #[error("Failed to initialize libmoose: {0}")]
+    #[cfg(debug_assertions)]
     LibmooseError(#[from] telio_lana::moose::Error),
     #[error("Failed to parse IP network")]
     IpNetworkError(#[from] ipnet::AddrParseError),
@@ -181,12 +186,14 @@ pub enum ErrorVariant {
     UpgradeSyncError(#[from] telio_traversal::upgrade_sync::Error),
     #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
     #[error("Socket pool error")]
+    #[cfg(debug_assertions)]
     SocketPoolError(#[from] telio_sockets::protector::platform::Error),
     #[error(transparent)]
     PostQuantum(#[from] telio_pq::Error),
     #[error("Cannot setup meshnet when the post quantum VPN is set up")]
     MeshnetUnavailableWithPQ,
     #[error("Connection upgrade failed - there is no session for key {0:?}")]
+    #[cfg(debug_assertions)]
     NoSessionForKey(PublicKey),
     #[error("Pinger receive timeout")]
     PingerReceiveTimeout,
@@ -208,6 +215,7 @@ pub enum ErrorVariant {
     #[error("Firewall init error: {0:?}")]
     FirewallError(#[from] telio_firewall::firewall::Error),
     #[error("Firewall loading error {0}")]
+    #[cfg(debug_assertions)]
     FirewallLoadingError(#[from] libloading::Error),
     #[error("FirewallDisabled")]
     FirewallDisabled,

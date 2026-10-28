@@ -28,6 +28,7 @@ pub enum ErrorVariant {
     PingerError(#[from] SurgeError),
     /// Pinger creation error
     #[error("Pinger creation for {0:?} error: {1}")]
+    #[cfg(debug_assertions)]
     PingerCreationError(surge_ping::ICMP, std::io::Error),
     // Target error
     #[error(transparent)]

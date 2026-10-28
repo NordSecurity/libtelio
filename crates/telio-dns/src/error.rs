@@ -1,5 +1,5 @@
 use crate::zone::NordZoneError;
-use std::{io, net::AddrParseError};
+use std::io;
 use thiserror::Error;
 
 /// Result type used by the telio-dns crate
@@ -70,7 +70,8 @@ pub enum ErrorVariant {
 
     /// Invalid IP address
     #[error("Invalid IP address: {0}")]
-    AddressParse(#[from] AddrParseError),
+    #[cfg(debug_assertions)]
+    AddressParse(#[from] std::net::AddrParseError),
 
     /// Failed to create the raw DNS forwarder
     #[error("Failed to create DNS forwarder: {0}")]
