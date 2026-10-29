@@ -17,6 +17,11 @@ class DebugIdError(Exception):
 
 
 def check_elf(readelf: str, lib: Path, debug: Path) -> None:
+    lib_id = matching_elf_build_id(readelf, lib, debug)
+    print(f"{lib.name} and {debug.name} have build ID {lib_id}")
+
+
+def matching_elf_build_id(readelf: str, lib: Path, debug: Path) -> str:
     lib_id = _elf_build_id(readelf, lib)
     debug_id = _elf_build_id(readelf, debug)
     if lib_id != debug_id:
@@ -27,7 +32,7 @@ def check_elf(readelf: str, lib: Path, debug: Path) -> None:
     match = ELF_DEBUG_INFO.search(sections)
     if match is None or match[1] != ELF_SECTION_WITH_DATA or int(match[2], 16) == 0:
         raise DebugIdError(f"{debug} has no .debug_info")
-    print(f"{lib.name} and {debug.name} have build ID {lib_id}")
+    return lib_id
 
 
 def check_macho(dwarfdump: str, lib: Path, dsym: Path) -> None:
