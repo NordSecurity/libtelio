@@ -1,4 +1,4 @@
-use crate::telio_log_debug;
+use crate::telio_log_error;
 use backtrace::{self, BacktraceFrame, BacktraceSymbol};
 use findshlibs::{Avma, Segment, SharedLibrary, SharedLibraryId, TargetSharedLibrary};
 use parking_lot::Mutex;
@@ -8,33 +8,11 @@ use uuid::Uuid;
 const UNKNOWN: &str = "?";
 const FUNCTION_SEPARATOR: &str = " -> ";
 
-/// Print to debug log current backtrace
+/// Print current backtrace to the error log, one line per function
 pub fn log_current_backtrace() {
-    let mut counter = 0;
-    backtrace::trace(|frame| {
-        let ip = frame.ip();
-        let symbol_address = frame.symbol_address();
-
-        // Resolve this instruction pointer to a symbol name
-        backtrace::resolve_frame(frame, |symbol| {
-            let name = symbol
-                .name()
-                .map(|symbol| symbol.to_string())
-                .unwrap_or_else(|| format!("{symbol_address:?}"));
-
-            let filename = symbol
-                .filename()
-                .map(|filename| filename.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "uknown.file".to_owned());
-
-            let lineno = symbol.lineno().unwrap_or(0);
-
-            telio_log_debug!("backtrace: {counter:3} {ip:?} {filename}:{lineno} {name}");
-            counter += 1;
-        });
-
-        true
-    });
+    for (index, function) in Backtrace::capture().functions().iter().enumerate() {
+        telio_log_error!("backtrace: {index:3} {function}");
+    }
 }
 
 /// Function of a [Backtrace] frame

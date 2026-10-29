@@ -5,6 +5,7 @@ from tests.utils.connection import ConnectionTag
 
 STACK_PANIC_MESSAGE = "runtime_panic_test_call_stack"
 STACK_PANIC_LOG = r"panicked at src.ffi\.rs"
+BACKTRACE_LOG = r"telio_utils::backtrace:\d+ backtrace: "
 LIBTELIO_MODULES = {"libtelio.so", "libtelio.dylib", "telio.dll"}
 
 
@@ -38,7 +39,7 @@ async def test_panic_error_has_backtrace(
     env: Environment,
 ) -> None:
     client, *_ = env.clients
-    client.allow_errors([STACK_PANIC_LOG])
+    client.allow_errors([STACK_PANIC_LOG, BACKTRACE_LOG])
 
     with pytest.raises(LibtelioError, match=STACK_PANIC_MESSAGE) as error:
         await client.generate_stack_panic()
