@@ -15,7 +15,7 @@ use crate::{
 };
 use rand::RngExt;
 use std::{collections::HashMap, sync::Arc, time::Duration};
-use telio_utils::{sleep_until, telio_log_debug, Instant};
+use telio_utils::{sleep_until, telio_log_debug, telio_log_warn, Instant};
 use tokio::{
     net::UdpSocket,
     sync::{mpsc, oneshot, Mutex},
@@ -199,7 +199,7 @@ impl UdpForwarder {
                             }
                         }
                         Err(e) => {
-                            telio_log_debug!("Failed to receive from upstream resolver: {e}");
+                            telio_log_warn!("Failed to receive from upstream resolver: {e}");
                         }
                     }
                 }
@@ -382,7 +382,7 @@ impl UdpForwarder {
                     pending.insert(internal_id, entry);
                 }
                 None => {
-                    telio_log_debug!("All upstreams exhausted for request: {internal_id}");
+                    telio_log_warn!("All upstreams exhausted for request: {internal_id}");
                     send_channel_response!(entry.respond_to, Err(ForwardError::Timeout));
                 }
             }
