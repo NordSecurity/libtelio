@@ -64,21 +64,20 @@ def location_fields(location):
 def serialize_error(f):
     fname = str(f).split(" ")[1]
 
-    def wrap(*args, **kwargs):
-        args_str = ", ".join(map(str, args[1:]))
+    def wrap(self, *args, **kwargs):
+        args_str = ", ".join(map(str, args))
         with open(REMOTE_LOG, "a", encoding="utf-8") as logfile:
             try:
-                res = f(*args, **kwargs)
+                res = f(self, *args, **kwargs)
                 logfile.write(
                     f"{datetime.datetime.now()} {fname}({args_str}) => {res}\n"
                 )
                 return (res, None, None)
             except libtelio.TelioError as e:
+                error = f"{datetime.datetime.now()} {fname}({args_str}) -> {str(e)}\n"
+                logfile.write(error)
                 functions = e.backtrace().functions()
-                logfile.write(
-                    f"{datetime.datetime.now()} {fname}({args_str}) -> {str(e)}\n"
-                )
-                logfile.write(format_backtrace(functions))
+                self.logger_cb.write(error + format_backtrace(functions))
                 return (None, str(e), list(map(location_fields, functions)))
 
     return wrap
@@ -109,6 +108,10 @@ class TelioLoggerCbImpl(libtelio.TelioLoggerCb):
             self.logfile.write(f"{datetime.datetime.now()} {log_level} {payload}\n")
         end_ts = time.time()
         return (start_ts, lock_acquired_ts, end_ts)
+
+    def write(self, text):
+        with self.lock:
+            self.logfile.write(text)
 
     def log(self, log_level, payload):
         (start_ts, lock_acquired_ts, end_ts) = self._do_log(log_level, payload)
@@ -169,10 +172,10 @@ class LibtelioWrapper:
 
         self._libtelio = None
         self._event_cb = TelioEventCbImpl()
-        self._logger_cb = TelioLoggerCbImpl(logfile)
+        self.logger_cb = TelioLoggerCbImpl(logfile)
         self._tp_lite_cb = TpLiteStatsCallbackImpl()
         libtelio.add_timestamps_to_logs()
-        libtelio.set_global_logger(libtelio.TelioLogLevel.DEBUG, self._logger_cb)
+        libtelio.set_global_logger(libtelio.TelioLogLevel.DEBUG, self.logger_cb)
 
     def shutdown(self):
         if self._libtelio is not None:
@@ -314,7 +317,7 @@ class LibtelioWrapper:
 
     @serialize_error
     def flush_logs(self):
-        self._logger_cb.logfile.flush()
+        self.logger_cb.logfile.flush()
 
     @serialize_error
     def enable_tp_lite_stats_collection(self, config: libtelio.TpLiteStatsOptions):
