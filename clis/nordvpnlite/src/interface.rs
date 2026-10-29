@@ -4,7 +4,7 @@ use regex_lite::Regex;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::process::Command;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 #[cfg(target_os = "linux")]
 use telio_core::telio_utils::LIBTELIO_FWMARK;
@@ -15,6 +15,16 @@ const DEFAULT_ROUTING_TABLE_ID: u32 = 205;
 const WIREGUARD_OVERHEAD: u32 = 80;
 const MAX_VPN_PATH_MTU: u32 = 1500;
 const MIN_TUNNEL_MTU: u32 = 1280;
+
+/// UCI state directory used for the dnsmasq settings.
+///
+/// The settings are written as UCI state instead of being committed. OpenWRT
+/// init scripts load their configuration with the state applied (`LOAD_STATE=1`
+/// in `/lib/functions.sh`), so dnsmasq uses them, while `uci commit` run by
+/// other tools only saves the changes kept in `/tmp/.uci`. The state lives in
+/// RAM, so a reboot or a power loss while connected leaves the saved
+/// configuration untouched.
+const UCI_STATE_DIR: &str = "/var/state";
 
 pub trait ConfigureInterface {
     /// Initialize the interface
@@ -70,6 +80,13 @@ fn execute_with_output(command: &mut Command) -> Result<String, NordVpnLiteError
         debug!("Error executing command {:?}: {:?}", command, stderr);
         Err(NordVpnLiteError::SystemCommandFailed(stderr.into()))
     }
+}
+
+/// Helper to build a `uci` command operating on the UCI state
+fn uci_state() -> Command {
+    let mut command = Command::new("uci");
+    command.args(["-P", UCI_STATE_DIR]);
+    command
 }
 
 /// Helper to find the lower available priorities in descending order
@@ -416,12 +433,6 @@ pub struct Uci {
     /// If the option is unset, the interface is enabled by default.
     wan6_disabled_initial_setting: Option<UciBoolOption>,
 
-    /// Initial dnsmasq noresolv value
-    initial_setting_dnsmasq_noresolv: Option<UciBoolOption>,
-
-    /// Initial dnsmasq server value
-    initial_setting_dnsmasq_server: Option<Vec<String>>,
-
     /// Tunnel MTU derived from the uplink interface, computed once at construction
     tunnel_mtu: u32,
 }
@@ -508,42 +519,16 @@ impl Uci {
                 })
                 .ok();
 
-        let initial_setting_dnsmasq_noresolv =
-            execute(Command::new("uci").args(["get", "dhcp.@dnsmasq[0]"]))
-                .map(|_| {
-                    execute_with_output(
-                        Command::new("uci").args(["get", "dhcp.@dnsmasq[0].noresolv"]),
-                    )
-                    .map(|res| UciBoolOption::from_str(&res))
-                    .unwrap_or(UciBoolOption::Default)
-                })
-                .ok();
-
-        let initial_setting_dnsmasq_server =
-            execute_with_output(Command::new("uci").args(["get", "dhcp.@dnsmasq[0].server"]))
-                .map(|res| {
-                    Some(
-                        res.split_whitespace()
-                            .map(|s| s.to_owned())
-                            .collect::<Vec<String>>(),
-                    )
-                })
-                .unwrap_or(None);
-
         let tunnel_mtu = tunnel_mtu_from_uplink(read_default_route_mtu());
 
         debug!("Initial network.wan.ipv6 state {wan_ipv6_initial_setting:?}");
         debug!("Initial network.wan6.disabled state {wan6_disabled_initial_setting:?}");
-        debug!("Initial dhcp.@dnsmasq[0].noresolv {initial_setting_dnsmasq_noresolv:?}");
-        debug!("Initial dhcp.@dnsmasq[0].server {initial_setting_dnsmasq_server:?}");
         debug!("Tunnel MTU {tunnel_mtu}");
 
         Self {
             interface_name: interface_name.to_string(),
             wan_ipv6_initial_setting,
             wan6_disabled_initial_setting,
-            initial_setting_dnsmasq_noresolv,
-            initial_setting_dnsmasq_server,
             tunnel_mtu,
             max_route_priority,
         }
@@ -556,26 +541,27 @@ impl Uci {
     fn configure_dnsmasq(&mut self, ips: &[IpAddr]) -> Result<(), NordVpnLiteError> {
         debug!("Configuring dnsmasq servers: {:?}", ips);
 
-        execute(Command::new("uci").args(["set", "dhcp.@dnsmasq[0].noresolv=1"]))?;
-        execute(Command::new("uci").args(["delete", "dhcp.@dnsmasq[0].server"]))
+        // Drop what a previous run left behind without restoring it, otherwise
+        // the lists below would be appended twice.
+        self.revert_dnsmasq_state();
+
+        execute(uci_state().args(["set", "dhcp.@dnsmasq[0].noresolv=1"]))?;
+        execute(uci_state().args(["delete", "dhcp.@dnsmasq[0].server"]))
             .map_err(|e| {
                 debug!("uci couldn't delete dnsmasq server entry: {}", e);
             })
             .ok();
 
         for ip in ips {
-            execute(
-                Command::new("uci").args(["add_list", &format!("dhcp.@dnsmasq[0].server={}", ip)]),
-            )?;
+            execute(uci_state().args(["add_list", &format!("dhcp.@dnsmasq[0].server={}", ip)]))?;
         }
 
         debug!(
             "Advertising MTU {} to LAN via DHCP option:mtu",
             self.tunnel_mtu
         );
-        execute(Command::new("uci").args(["add_list", &self.mtu_dhcp_option()]))?;
+        execute(uci_state().args(["add_list", &self.mtu_dhcp_option()]))?;
 
-        execute(Command::new("uci").args(["commit", "dhcp"]))?;
         execute(Command::new("/etc/init.d/dnsmasq").args(["reload"]))?;
 
         Ok(())
@@ -584,42 +570,25 @@ impl Uci {
     fn restore_dnsmasq(&self) -> Result<(), NordVpnLiteError> {
         debug!("Restoring dnsmasq settings");
 
-        match self.initial_setting_dnsmasq_noresolv {
-            Some(ref v) => {
-                let state = if v.is_true() { "1" } else { "0" };
-                if let Err(e) = execute(
-                    Command::new("uci")
-                        .args(["set", &format!("dhcp.@dnsmasq[0].noresolv={}", state)]),
-                ) {
-                    error!("Error restoring dhcp.@dnsmasq[0].noresolv: {}", e);
-                }
-            }
-            None => warn!("No value stored for dhcp.@dnsmasq[0].noresolv. Ignoring."),
-        }
-
-        // Adding servers works in append mode, we must delete first
-        execute(Command::new("uci").args(["delete", "dhcp.@dnsmasq[0].server"]))?;
-
-        if let Some(ips) = &self.initial_setting_dnsmasq_server {
-            for ip in ips {
-                execute(
-                    Command::new("uci")
-                        .args(["add_list", &format!("dhcp.@dnsmasq[0].server={}", ip)]),
-                )?;
-            }
-        }
-
-        debug!("Removing advertised DHCP option:mtu");
-        execute(Command::new("uci").args(["del_list", &self.mtu_dhcp_option()]))
-            .map_err(|e| {
-                debug!("uci couldn't remove advertised dhcp.lan.dhcp_option: {}", e);
-            })
-            .ok();
-
-        execute(Command::new("uci").args(["commit", "dhcp"]))?;
+        // Reverting the state brings back the saved configuration, including
+        // any change made to it while connected.
+        self.revert_dnsmasq_state();
         execute(Command::new("/etc/init.d/dnsmasq").args(["reload"]))?;
 
         Ok(())
+    }
+
+    /// Helper to drop the dnsmasq settings written by `configure_dnsmasq`
+    fn revert_dnsmasq_state(&self) {
+        for option in [
+            "dhcp.@dnsmasq[0].noresolv",
+            "dhcp.@dnsmasq[0].server",
+            "dhcp.lan.dhcp_option",
+        ] {
+            if let Err(e) = execute(uci_state().args(["revert", option])) {
+                debug!("uci couldn't revert {option}: {e}");
+            }
+        }
     }
 
     // Helper to disable IPv6
