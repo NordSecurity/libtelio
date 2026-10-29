@@ -1,1 +1,0 @@
-Check, whether the meshnet is enabled, before making control decision in wg-nt dynamic mode.
