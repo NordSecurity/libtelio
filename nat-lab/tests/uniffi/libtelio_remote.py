@@ -35,6 +35,22 @@ LINE_BUFFERED = 1
 init_serialization(libtelio)
 
 
+def format_location(index, location):
+    address = location.address()
+    address_hex = None if address is None else hex(address)
+    return (
+        f"  {index}: {location.name()} at {location.file()}:{location.line()}"
+        f" [{location.module()} {location.module_id()} {address_hex}]\n"
+    )
+
+
+def format_backtrace(backtrace):
+    return "".join(
+        format_location(index, location)
+        for index, location in enumerate(backtrace.functions())
+    )
+
+
 def serialize_error(f):
     fname = str(f).split(" ")[1]
 
@@ -51,6 +67,7 @@ def serialize_error(f):
                 logfile.write(
                     f"{datetime.datetime.now()} {fname}({args_str}) -> {str(e)}\n"
                 )
+                logfile.write(format_backtrace(e.backtrace()))
                 return (None, str(e))
 
     return wrap
