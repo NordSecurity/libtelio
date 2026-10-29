@@ -64,3 +64,9 @@ python3 ci/generate_changelog.py --out-version "v1.2.3" --dry-run
 (The release pipeline drives this via `ci/release.py`, which imports these functions directly.)
 
 Run `python3 ci/generate_changelog.py --help` for the full list.
+
+## Debug symbols
+
+Every release publishes debug symbols next to the libraries. See
+[debug_symbols.md](debug_symbols.md) for how to match them with the libraries and how to turn
+addresses into function names and source lines.
