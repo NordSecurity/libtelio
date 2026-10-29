@@ -31,6 +31,28 @@ exported functions, so the name is often wrong. Use the ID to pick the debug fil
 address to the commands below. Most addresses point at the instruction after a call. Subtract 1
 from them to get the line of the call itself, for example `0x5786dd` becomes `0x5786dc`.
 
+## Resolving addresses with a script
+
+`ci/symbolize.py` does the manual steps below in one go. It checks that the debug file belongs to
+the library, then prints the function, file and line of each address. Inlined functions are
+printed innermost first:
+
+```bash
+ci/symbolize.py --return-address libtelio.so libtelio.so.debug 0x5786dd
+```
+
+```text
+libtelio.so and libtelio.so.debug have build ID 6e432711b2782a8c5e9f0190da1c6912a564a63e
+0x5786dd
+  <telio_core::device::Device>::set_config at .../crates/telio-core/src/device.rs:766:29
+```
+
+It works the same way for `libtelio.dylib` with `libtelio.dylib.dSYM` (the dSYM of one
+architecture) and for `telio.dll` with `telio.pdb`. On Windows it adds the image base itself. Pass
+`--return-address` for addresses from a backtrace, so it looks up the call (the address minus 1).
+It needs `llvm-symbolizer`, `llvm-readelf`, `llvm-dwarfdump`, `llvm-readobj` and `llvm-pdbutil`
+from LLVM, on `PATH` or in the directory passed with `--llvm-bin`.
+
 ## Where the files are
 
 | Platform | Library | Debug file | ID |
