@@ -1294,7 +1294,7 @@ async def test_dns_no_reply_when_all_upstreams_silent(use_raw_forwarder: bool) -
 async def test_dns_failover_to_healthy_upstream(use_raw_forwarder: bool) -> None:
     async with AsyncExitStack() as exit_stack:
         _, connection_alpha = await setup_forwarder_test_node(
-            exit_stack, use_raw_forwarder, [DNS_SERVER_1_IP, DNS_SERVER_2_IP]
+            exit_stack, use_raw_forwarder, [DNS_SERVER_2_IP, DNS_SERVER_1_IP]
         )
 
         # hickory orders upstreams by stats seeded with a random RTT,
