@@ -4,6 +4,7 @@ import Pyro5.errors  # type:ignore
 import sys
 import tests.uniffi.telio_bindings as libtelio
 import time
+from dataclasses import dataclass
 from functools import wraps
 from Pyro5.api import Proxy  # type: ignore
 from tests.uniffi.serialization import init_serialization  # type: ignore
@@ -27,6 +28,22 @@ class ProxyConnectionError(Exception):
         return f"ProxyConnectionError: {self._inner}"
 
 
+@dataclass(frozen=True)
+class BacktraceLocation:
+    file: Optional[str]
+    line: Optional[int]
+    name: Optional[str]
+    module: Optional[str]
+    module_id: Optional[str]
+    address: Optional[int]
+
+
+class LibtelioError(RuntimeError):
+    def __init__(self, message: str, backtrace: List[BacktraceLocation]):
+        super().__init__(message)
+        self.backtrace = backtrace
+
+
 def move_to_async_thread(f):
     @wraps(f)
     async def wrap(*args, **kwargs):
@@ -46,9 +63,11 @@ class LibtelioProxy:
             fn_res = f(remote)
             if fn_res is None:
                 return None
-            (res, err) = fn_res
+            (res, err, backtrace) = fn_res
             if err is not None:
-                raise RuntimeError(err)
+                raise LibtelioError(
+                    err, [BacktraceLocation(**fields) for fields in backtrace]
+                )
             return res
 
     @move_to_async_thread
@@ -210,6 +229,10 @@ class LibtelioProxy:
     @move_to_async_thread
     def receive_ping(self) -> str:
         return self._handle_remote_error(lambda r: r.receive_ping())
+
+    @move_to_async_thread
+    def generate_stack_panic(self) -> None:
+        self._handle_remote_error(lambda r: r.generate_stack_panic())
 
     @move_to_async_thread
     def flush_logs(self) -> None:

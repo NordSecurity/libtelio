@@ -44,11 +44,21 @@ def format_location(index, location):
     )
 
 
-def format_backtrace(backtrace):
+def format_backtrace(functions):
     return "".join(
-        format_location(index, location)
-        for index, location in enumerate(backtrace.functions())
+        format_location(index, location) for index, location in enumerate(functions)
     )
+
+
+def location_fields(location):
+    return {
+        "file": location.file(),
+        "line": location.line(),
+        "name": location.name(),
+        "module": location.module(),
+        "module_id": location.module_id(),
+        "address": location.address(),
+    }
 
 
 def serialize_error(f):
@@ -62,13 +72,14 @@ def serialize_error(f):
                 logfile.write(
                     f"{datetime.datetime.now()} {fname}({args_str}) => {res}\n"
                 )
-                return (res, None)
+                return (res, None, None)
             except libtelio.TelioError as e:
+                functions = e.backtrace().functions()
                 logfile.write(
                     f"{datetime.datetime.now()} {fname}({args_str}) -> {str(e)}\n"
                 )
-                logfile.write(format_backtrace(e.backtrace()))
-                return (None, str(e))
+                logfile.write(format_backtrace(functions))
+                return (None, str(e), list(map(location_fields, functions)))
 
     return wrap
 
@@ -296,6 +307,10 @@ class LibtelioWrapper:
     @serialize_error
     def receive_ping(self) -> str:
         return self._libtelio.receive_ping()
+
+    @serialize_error
+    def generate_stack_panic(self):
+        self._libtelio.generate_stack_panic()
 
     @serialize_error
     def flush_logs(self):
