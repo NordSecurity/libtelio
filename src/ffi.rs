@@ -41,6 +41,7 @@ use telio_utils::{
 };
 
 const DEFAULT_PANIC_MSG: &str = "libtelio panicked";
+const GENERATED_ERROR_MESSAGE: &str = "generated_error_test_call_stack";
 
 pub type FfiResult<T> = Result<T, Arc<TelioError>>;
 
@@ -1140,6 +1141,29 @@ impl Telio {
             })
         })
     }
+
+    /// For testing only.
+    pub fn generate_error(&self) -> FfiResult<()> {
+        catch_ffi_panic(foo)
+    }
+}
+
+fn foo() -> FfiResult<()> {
+    bar()
+}
+
+fn bar() -> FfiResult<()> {
+    baz()
+}
+
+fn baz() -> FfiResult<()> {
+    quux()
+}
+
+fn quux() -> FfiResult<()> {
+    Err(TelioError::new(TelioErrorVariant::UnknownError {
+        inner: GENERATED_ERROR_MESSAGE.to_owned(),
+    }))
 }
 
 /// cbindgen:ignore
