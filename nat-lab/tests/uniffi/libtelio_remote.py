@@ -316,6 +316,10 @@ class LibtelioWrapper:
         self._libtelio.generate_stack_panic()
 
     @serialize_error
+    def generate_error(self):
+        self._libtelio.generate_error()
+
+    @serialize_error
     def flush_logs(self):
         self.logger_cb.logfile.flush()
 

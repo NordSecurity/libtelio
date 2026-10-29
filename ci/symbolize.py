@@ -5,8 +5,9 @@ import argparse
 import json
 import re
 import sys
+import uuid
 from enum import Enum
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import NamedTuple, Optional
 
 import debug_ids
@@ -34,8 +35,11 @@ MAGIC_SIZE = 4
 DSYM_DWARF_DIR = Path("Contents", "Resources", "DWARF")
 
 PE_IMAGE_BASE = re.compile(r"ImageBase:\s*(0x[0-9A-Fa-f]+)")
-PE_PDB_GUID = re.compile(r"PDBGUID:\s*\{([0-9A-Fa-f-]+)\}")
+PE_PDB_GUID = re.compile(
+    r"PDBGUID:\s*(?:\{(?P<text>[0-9A-Fa-f-]+)\}|\((?P<bytes>[0-9A-Fa-f ]+)\))"
+)
 PE_PDB_AGE = re.compile(r"PDBAge:\s*(\d+)")
+PE_PDB_NAME = re.compile(r"PDBFileName:\s*(.+?)\s*$", re.MULTILINE)
 PDB_GUID = re.compile(r"^\s*GUID:\s*\{([0-9A-Fa-f-]+)\}", re.MULTILINE)
 PDB_AGE = re.compile(r"^\s*Age:\s*(\d+)", re.MULTILINE)
 
@@ -54,9 +58,22 @@ class AddressKind(Enum):
     RETURN = "return"
 
 
+class Output(Enum):
+    TEXT = "text"
+    JSON = "json"
+
+
 class Lookup(NamedTuple):
     symbolizer_args: list[str]
     address_offset: int
+    module_id: str
+
+
+class Frame(NamedTuple):
+    function: str
+    file: str
+    line: int
+    column: int
 
 
 class Llvm:
@@ -82,8 +99,8 @@ def detect_format(lib: Path) -> Format:
 
 
 def prepare_elf(llvm: Llvm, lib: Path, debug: Path) -> Lookup:
-    debug_ids.check_elf(llvm.tool(LLVM_READELF), lib, debug)
-    return Lookup([f"--obj={debug}"], 0)
+    build_id = debug_ids.matching_elf_build_id(llvm.tool(LLVM_READELF), lib, debug)
+    return Lookup([f"--obj={debug}"], 0, build_id)
 
 
 def prepare_macho(llvm: Llvm, lib: Path, debug: Path) -> Lookup:
@@ -100,8 +117,7 @@ def prepare_macho(llvm: Llvm, lib: Path, debug: Path) -> Lookup:
         raise debug_ids.DebugIdError(
             f"{lib} has UUIDs {lib_uuids}, but {dwarf} has UUID {uuid} ({arch})"
         )
-    print(f"{lib.name} and {debug.name} have UUID {uuid} ({arch})")
-    return Lookup([f"--obj={dwarf}", f"--default-arch={arch}"], 0)
+    return Lookup([f"--obj={dwarf}", f"--default-arch={arch}"], 0, uuid.lower())
 
 
 def dsym_dwarf_file(debug: Path) -> Path:
@@ -118,18 +134,33 @@ def prepare_pe(llvm: Llvm, lib: Path, debug: Path) -> Lookup:
         [llvm.tool(LLVM_READOBJ), "--file-headers", "--coff-debug-directory", str(lib)]
     )
     summary = debug_ids.run([llvm.tool(LLVM_PDBUTIL), "dump", "--summary", str(debug)])
-    lib_guid = search(PE_PDB_GUID, headers, lib, "PDB GUID").upper()
-    lib_age = search(PE_PDB_AGE, headers, lib, "PDB age")
-    pdb_guid = search(PDB_GUID, summary, debug, "GUID").upper()
-    pdb_age = search(PDB_AGE, summary, debug, "age")
+    lib_guid = pe_pdb_guid(headers, lib)
+    lib_age = int(search(PE_PDB_AGE, headers, lib, "PDB age"))
+    pdb_guid = uuid.UUID(search(PDB_GUID, summary, debug, "GUID"))
+    pdb_age = int(search(PDB_AGE, summary, debug, "age"))
     if (lib_guid, lib_age) != (pdb_guid, pdb_age):
         raise debug_ids.DebugIdError(
             f"{lib} expects GUID {lib_guid} and age {lib_age}, "
             f"but {debug} has GUID {pdb_guid} and age {pdb_age}"
         )
-    print(f"{lib.name} and {debug.name} have GUID {lib_guid} and age {lib_age}")
+    pdb_name = PureWindowsPath(search(PE_PDB_NAME, headers, lib, "PDB name")).name
+    expected_pdb = lib.parent / pdb_name
+    if debug.resolve() != expected_pdb.resolve():
+        raise debug_ids.DebugIdError(
+            f"{LLVM_SYMBOLIZER} reads the PDB next to the DLL, put {debug} at {expected_pdb}"
+        )
     image_base = int(search(PE_IMAGE_BASE, headers, lib, "ImageBase"), 16)
-    return Lookup([f"--obj={lib}", f"--pdb={debug}"], image_base)
+    module_id = f"{lib_guid.hex.upper()}{lib_age:X}"
+    return Lookup([f"--obj={lib}"], image_base, module_id)
+
+
+def pe_pdb_guid(headers: str, lib: Path) -> uuid.UUID:
+    match = PE_PDB_GUID.search(headers)
+    if match is None:
+        raise debug_ids.DebugIdError(f"{lib} has no PDB GUID")
+    if match["text"] is not None:
+        return uuid.UUID(match["text"])
+    return uuid.UUID(bytes_le=bytes.fromhex(match["bytes"]))
 
 
 def search(pattern: re.Pattern, text: str, path: Path, what: str) -> str:
@@ -146,9 +177,9 @@ PREPARE = {
 }
 
 
-def symbolize(
+def resolve(
     llvm: Llvm, lookup: Lookup, addresses: list[int], kind: AddressKind
-) -> None:
+) -> list[list[Frame]]:
     adjustment = RETURN_ADDRESS_ADJUSTMENT if kind == AddressKind.RETURN else 0
     queries = [
         hex(address - adjustment + lookup.address_offset) for address in addresses
@@ -161,17 +192,55 @@ def symbolize(
             *queries,
         ]
     )
-    for address, result in zip(addresses, json.loads(output)):
+    return [
+        [
+            Frame(
+                frame["FunctionName"], frame["FileName"], frame["Line"], frame["Column"]
+            )
+            for frame in result["Symbol"]
+        ]
+        for result in json.loads(output)
+    ]
+
+
+def print_text(
+    lib: Path,
+    debug: Path,
+    lookup: Lookup,
+    addresses: list[int],
+    resolved: list[list[Frame]],
+) -> None:
+    print(f"{lib.name} and {debug.name} have ID {lookup.module_id}")
+    for address, frames in zip(addresses, resolved):
         print(hex(address))
-        for frame in result["Symbol"]:
+        for frame in frames:
             print(f"  {format_frame(frame)}")
 
 
-def format_frame(frame: dict) -> str:
-    function = frame["FunctionName"] or UNKNOWN
-    if not frame["FileName"]:
+def format_frame(frame: Frame) -> str:
+    function = frame.function or UNKNOWN
+    if not frame.file:
         return function
-    return f"{function} at {frame['FileName']}:{frame['Line']}:{frame['Column']}"
+    return f"{function} at {frame.file}:{frame.line}:{frame.column}"
+
+
+def print_json(
+    lookup: Lookup, addresses: list[int], resolved: list[list[Frame]]
+) -> None:
+    print(
+        json.dumps(
+            {
+                "module_id": lookup.module_id,
+                "addresses": [
+                    {
+                        "address": hex(address),
+                        "frames": [frame._asdict() for frame in frames],
+                    }
+                    for address, frames in zip(addresses, resolved)
+                ],
+            }
+        )
+    )
 
 
 def parse_address(text: str) -> int:
@@ -205,6 +274,11 @@ def main() -> None:
         type=Path,
         help="directory with the LLVM tools, when they are not on PATH",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="print the library ID and the functions of each address as JSON",
+    )
     args = parser.parse_args()
 
     for path in (args.library, args.debug):
@@ -213,13 +287,19 @@ def main() -> None:
 
     llvm = Llvm(args.llvm_bin)
     kind = AddressKind.RETURN if args.return_address else AddressKind.INSTRUCTION
+    output = Output.JSON if args.json else Output.TEXT
     try:
         lookup = PREPARE[detect_format(args.library)](llvm, args.library, args.debug)
-        symbolize(llvm, lookup, args.addresses, kind)
+        resolved = resolve(llvm, lookup, args.addresses, kind)
     except debug_ids.DebugIdError as error:
         sys.exit(f"error: {error}")
     except FileNotFoundError as error:
         sys.exit(f"error: {error.filename} not found, install LLVM or pass --llvm-bin")
+
+    if output == Output.JSON:
+        print_json(lookup, args.addresses, resolved)
+        return
+    print_text(args.library, args.debug, lookup, args.addresses, resolved)
 
 
 if __name__ == "__main__":

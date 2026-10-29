@@ -639,6 +639,10 @@ interface Telio {
     /// For testing only.
     [Throws=TelioError]
     void generate_thread_panic();
+
+    /// For testing only. Returns an error created by a chain of nested calls.
+    [Throws=TelioError]
+    void generate_error();
 };
 
 callback interface TelioEventCb {
