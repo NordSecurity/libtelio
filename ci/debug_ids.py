@@ -23,7 +23,7 @@ def check_elf(readelf: str, lib: Path, debug: Path) -> None:
         raise DebugIdError(
             f"{lib} has build ID {lib_id}, but {debug} has build ID {debug_id}"
         )
-    sections = _run([readelf, "-S", "-W", str(debug)])
+    sections = run([readelf, "-S", "-W", str(debug)])
     match = ELF_DEBUG_INFO.search(sections)
     if match is None or match[1] != ELF_SECTION_WITH_DATA or int(match[2], 16) == 0:
         raise DebugIdError(f"{debug} has no .debug_info")
@@ -31,13 +31,13 @@ def check_elf(readelf: str, lib: Path, debug: Path) -> None:
 
 
 def check_macho(dwarfdump: str, lib: Path, dsym: Path) -> None:
-    lib_uuids = _macho_uuids(dwarfdump, lib)
-    dsym_uuids = _macho_uuids(dwarfdump, dsym)
+    lib_uuids = macho_uuids(dwarfdump, lib)
+    dsym_uuids = macho_uuids(dwarfdump, dsym)
     if lib_uuids != dsym_uuids:
         raise DebugIdError(
             f"{lib} has UUIDs {lib_uuids}, but {dsym} has UUIDs {dsym_uuids}"
         )
-    sizes = _run([dwarfdump, "--show-section-sizes", str(dsym)])
+    sizes = run([dwarfdump, "--show-section-sizes", str(dsym)])
     match = DSYM_DEBUG_INFO.search(sizes)
     if match is None or int(match[1]) == 0:
         raise DebugIdError(f"{dsym} has no __debug_info")
@@ -45,7 +45,7 @@ def check_macho(dwarfdump: str, lib: Path, dsym: Path) -> None:
 
 
 def check_pe(dumpbin: str, dll: Path, pdb: Path) -> None:
-    headers = _run([dumpbin, "/headers", str(dll)])
+    headers = run([dumpbin, "/headers", str(dll)])
     match = PE_CODEVIEW.search(headers)
     if match is None:
         raise DebugIdError(f"{dll} has no CodeView debug record")
@@ -60,21 +60,21 @@ def check_pe(dumpbin: str, dll: Path, pdb: Path) -> None:
 
 
 def _elf_build_id(readelf: str, path: Path) -> str:
-    match = ELF_BUILD_ID.search(_run([readelf, "-n", str(path)]))
+    match = ELF_BUILD_ID.search(run([readelf, "-n", str(path)]))
     if match is None:
         raise DebugIdError(f"{path} has no build ID")
     return match[1]
 
 
-def _macho_uuids(dwarfdump: str, path: Path) -> dict[str, str]:
-    output = _run([dwarfdump, "--uuid", str(path)])
+def macho_uuids(dwarfdump: str, path: Path) -> dict[str, str]:
+    output = run([dwarfdump, "--uuid", str(path)])
     uuids = {arch: uuid for uuid, arch in MACHO_UUID.findall(output)}
     if not uuids:
         raise DebugIdError(f"{path} has no UUID")
     return uuids
 
 
-def _run(command: list[str]) -> str:
+def run(command: list[str]) -> str:
     result = subprocess.run(
         command, check=False, capture_output=True, text=True, errors="replace"
     )
