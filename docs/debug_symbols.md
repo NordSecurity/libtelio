@@ -16,6 +16,21 @@ check runs only for MSVC builds.
 
 The commands below check the same things by hand. On Windows they also compare the GUID and age.
 
+## Where the addresses come from
+
+When libtelio panics, it logs a backtrace at DEBUG level, one line per function:
+
+```text
+backtrace:   7 libtelio.so 6e432711b2782a8c5e9f0190da1c6912a564a63e 0x5786dd uniffi_telio_fn_method_telio_set_meshnet
+```
+
+The columns are the library, its ID, the address relative to the start of the library and the
+function name. Errors returned over FFI carry the same data: `TelioError.backtrace().functions()`
+gives the library, ID, address and name of each function. Release libraries only contain their
+exported functions, so the name is often wrong. Use the ID to pick the debug file and pass the
+address to the commands below. Most addresses point at the instruction after a call. Subtract 1
+from them to get the line of the call itself, for example `0x5786dd` becomes `0x5786dc`.
+
 ## Where the files are
 
 | Platform | Library | Debug file | ID |
