@@ -1,1 +1,0 @@
-Fix WG-NT re-binding the previously used listen port after a dynamic down transition, which could clash with a port taken by another process in the meantime.
