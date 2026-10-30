@@ -80,6 +80,8 @@ interface Location {
 
 interface Backtrace {
     sequence<Location> functions();
+    /// Functions in one line, innermost first, for example `a -> b -> c`
+    string as_string();
 };
 
 [Error]

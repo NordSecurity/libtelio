@@ -2,8 +2,11 @@ use crate::telio_log_debug;
 use backtrace::{self, BacktraceFrame, BacktraceSymbol};
 use findshlibs::{Avma, Segment, SharedLibrary, SharedLibraryId, TargetSharedLibrary};
 use parking_lot::Mutex;
-use std::{path::Path, sync::Arc};
+use std::{fmt, path::Path, sync::Arc};
 use uuid::Uuid;
+
+const UNKNOWN: &str = "?";
+const FUNCTION_SEPARATOR: &str = " -> ";
 
 /// Print to debug log current backtrace
 pub fn log_current_backtrace() {
@@ -93,6 +96,24 @@ impl Location {
     }
 }
 
+impl fmt::Display for Location {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let address = self.address.map(|address| format!("{address:#x}"));
+        write!(
+            f,
+            "{} {} {} {}",
+            self.module.as_deref().unwrap_or(UNKNOWN),
+            self.module_id.as_deref().unwrap_or(UNKNOWN),
+            address.as_deref().unwrap_or(UNKNOWN),
+            self.name.as_deref().unwrap_or(UNKNOWN),
+        )?;
+        let (Some(file), Some(line)) = (&self.file, self.line) else {
+            return Ok(());
+        };
+        write!(f, " {file}:{line}")
+    }
+}
+
 struct Module {
     name: Option<String>,
     id: Option<String>,
@@ -124,6 +145,19 @@ impl Backtrace {
             .map(Arc::new)
             .collect()
     }
+
+    /// Functions in one line, innermost first, for example `a -> b -> c`
+    pub fn as_string(&self) -> String {
+        join_functions(&self.functions())
+    }
+}
+
+fn join_functions(functions: &[Arc<Location>]) -> String {
+    functions
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(FUNCTION_SEPARATOR)
 }
 
 fn frame_functions(frame: &BacktraceFrame, module: Option<&Module>) -> Vec<Location> {
@@ -307,6 +341,59 @@ mod tests {
                 && function.module_id.is_some()
                 && function.address.is_some()
         }));
+    }
+
+    #[test]
+    fn displays_location_for_offline_resolving() {
+        let location = super::Location {
+            file: Some("src/ffi.rs".to_owned()),
+            line: Some(1117),
+            name: Some("telio::ffi::catch_ffi_panic".to_owned()),
+            module: Some("libtelio.so".to_owned()),
+            module_id: Some("060eaf517144c4bdc824f8a03eb6bda00b8db2e1".to_owned()),
+            address: Some(0xe1376),
+        };
+        assert_eq!(
+            location.to_string(),
+            "libtelio.so 060eaf517144c4bdc824f8a03eb6bda00b8db2e1 0xe1376 \
+             telio::ffi::catch_ffi_panic src/ffi.rs:1117"
+        );
+    }
+
+    #[test]
+    fn displays_unknown_location() {
+        let location = super::Location {
+            file: None,
+            line: None,
+            name: None,
+            module: None,
+            module_id: None,
+            address: None,
+        };
+        let unknown = super::UNKNOWN;
+        assert_eq!(
+            location.to_string(),
+            format!("{unknown} {unknown} {unknown} {unknown}")
+        );
+    }
+
+    #[test]
+    fn joins_functions_in_one_line() {
+        let function = |name: &str, address| {
+            Arc::new(super::Location {
+                file: None,
+                line: None,
+                name: Some(name.to_owned()),
+                module: Some("libtelio.so".to_owned()),
+                module_id: Some("060eaf51".to_owned()),
+                address: Some(address),
+            })
+        };
+        let functions = [function("a", 0x1), function("b", 0x2), function("c", 0x3)];
+        assert_eq!(
+            super::join_functions(&functions),
+            "libtelio.so 060eaf51 0x1 a -> libtelio.so 060eaf51 0x2 b -> libtelio.so 060eaf51 0x3 c"
+        );
     }
 
     #[test]
