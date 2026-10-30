@@ -1,6 +1,8 @@
 #!/bin/env python3
 
 import logging
+import socket
+import struct
 from twisted.internet import defer, reactor
 from twisted.names import dns, server
 
@@ -9,6 +11,9 @@ KNOWN = {
         b"google.com": dns.Record_AAAA(address="2a00:1450:400e:80c::200e"),
         b"www.google.com": dns.Record_AAAA(address="2a00:1450:400e:80c::200e"),
         b"error-with-noerror-return-code.com": None,
+        b"silent-on-dns-server-2.com": None,
+        b"wrong-id.com": None,
+        b"malformed-first.com": None,
         b"api.nordvpn.com": dns.Record_AAAA(address="2001:db8:85a4::adda:edde:b"),
         b"mqtt.nordvpn.com": dns.Record_AAAA(address="2001:db8:85a4::adda:edde:a"),
     },
@@ -16,6 +21,9 @@ KNOWN = {
         b"google.com": dns.Record_A(address="142.250.179.206"),
         b"www.google.com": dns.Record_A(address="142.250.179.206"),
         b"error-with-noerror-return-code.com": None,
+        b"silent-on-dns-server-2.com": dns.Record_A(address="192.0.2.53"),
+        b"wrong-id.com": dns.Record_A(address="192.0.2.54"),
+        b"malformed-first.com": dns.Record_A(address="192.0.2.55"),
         b"api.nordvpn.com": dns.Record_A(address="10.0.80.86"),
         b"mqtt.nordvpn.com": dns.Record_A(address="10.0.80.85"),
         # LLT-7558: an explicit, long TTL is required here. This record is the
@@ -32,8 +40,30 @@ KNOWN = {
     dns.PTR: {
         b"85.80.0.10.in-addr.arpa": dns.Record_PTR(name="mqtt.nordvpn.com"),
         b"86.80.0.10.in-addr.arpa": dns.Record_PTR(name="api.nordvpn.com"),
-    }
+    },
+    dns.TXT: {
+        b"txt-udp.com": dns.Record_TXT(b"udp-ok"),
+        b"txt-tcp-only.com": dns.Record_TXT(
+            b"tcp-only-" + b"a" * 246, b"b" * 255, b"c" * 100
+        ),
+    },
 }
+
+# Over UDP these names are answered with truncated (TC=1)
+# response, forcing a retry over TCP to get the records.
+TCP_ONLY = {b"txt-tcp-only.com"}
+
+# These names simulating an unresponsive upstream.
+SILENT = {
+    b"silent.com": {"dns-server-1", "dns-server-2"},
+    b"silent-on-dns-server-2.com": {"dns-server-2"},
+}
+HOSTNAME = socket.gethostname()
+
+# These names get a reply with a different message id,
+# or junk bytes right before the real reply.
+WRONG_ID_FIRST = {b"wrong-id.com"}
+MALFORMED_FIRST = {b"malformed-first.com"}
 
 
 class DNSResolver:
@@ -57,9 +87,36 @@ class DNSResolver:
         return defer.succeed(self._reply(query.name.name, query.type, record))
 
 
+class CustomDNSServerFactory(server.DNSServerFactory):
+    def handleQuery(self, message, protocol, address):
+        names = [query.name.name for query in message.queries]
+        if any(HOSTNAME in SILENT.get(name, ()) for name in names):
+            logging.info(f"Staying silent for {names}")
+            return
+        super().handleQuery(message, protocol, address)
+
+    def sendReply(self, protocol, message, address):
+        is_udp = isinstance(protocol, dns.DNSDatagramProtocol)
+        names = [query.name.name for query in message.queries]
+        if is_udp and any(name in TCP_ONLY for name in names):
+            logging.info(f"Truncating UDP reply for {names}")
+            message.answers = []
+            message.trunc = 1
+        if is_udp and any(name in WRONG_ID_FIRST for name in names):
+            logging.info(f"Sending reply with wrong id first for {names}")
+            reply = message.toStr()
+            wrong_id = struct.pack("!H", (message.id + 1) & 0xFFFF)
+            protocol.transport.write(wrong_id + reply[2:], address)
+        if is_udp and any(name in MALFORMED_FIRST for name in names):
+            logging.info(f"Sending malformed datagram first for {names}")
+            protocol.transport.write(b"\x00\x01\x02", address)
+        logging.info(f"Replying over {'UDP' if is_udp else 'TCP'} for {names}")
+        super().sendReply(protocol, message, address)
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-    factory = server.DNSServerFactory(clients=[DNSResolver()])
+    factory = CustomDNSServerFactory(clients=[DNSResolver()])
     # Listen on 53 (plaintext DNS) plus 443 (DoH) and 853 (DoT) "non-plaintext" ports
     for port in (53, 443, 853):
         reactor.listenUDP(port, dns.DNSDatagramProtocol(controller=factory), interface='::')

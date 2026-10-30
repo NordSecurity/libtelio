@@ -1,9 +1,16 @@
 import asyncio
 import itertools
 import pytest
+import re
 from contextlib import AsyncExitStack
 from tests import config, timeouts
-from tests.config import LIBTELIO_DNS_IPV4, LIBTELIO_DNS_IPV6, LAN_ADDR_MAP
+from tests.config import (
+    DNS_SERVER_1_IP,
+    DNS_SERVER_2_IP,
+    LIBTELIO_DNS_IPV4,
+    LIBTELIO_DNS_IPV6,
+    LAN_ADDR_MAP,
+)
 from tests.helpers import (
     SetupParameters,
     setup_api,
@@ -11,8 +18,10 @@ from tests.helpers import (
     setup_mesh_nodes,
     string_to_compressed_ipv6,
 )
+from tests.libtelio_client.client import Client
 from tests.utils.bindings import default_features, FeatureDns, TelioAdapterType
 from tests.utils.connection import ConnectionTag
+from tests.utils.connection.connection import Connection
 from tests.utils.connection_tracker import (
     ConntrackerEvent,
     ConnTrackerViolation,
@@ -21,7 +30,7 @@ from tests.utils.connection_tracker import (
     EventType as ConnTrackerEventType,
 )
 from tests.utils.connection_util import generate_connection_tracker_config
-from tests.utils.dns import query_dns, query_dns_port
+from tests.utils.dns import assert_no_dns_reply, query_dns, query_dns_port
 from tests.utils.process import ProcessExecError
 from tests.utils.router import IPStack
 from typing import List, Optional
@@ -44,6 +53,35 @@ def _dns_features(use_raw_forwarder: bool, **kwargs):
     features = default_features(**kwargs)
     features.dns.use_raw_forwarder = use_raw_forwarder
     return features
+
+
+async def setup_forwarder_test_node(
+    exit_stack: AsyncExitStack, use_raw_forwarder: bool, forward_servers: list[str]
+) -> tuple[Client, Connection]:
+    """
+    Helper to setup node for forwarder tests
+    Enables Magic DNS with forward_servers list
+    """
+    env = await setup_mesh_nodes(
+        exit_stack,
+        [
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                ip_stack=IPStack.IPv4v6,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=(1, 1),
+                ),
+                features=_dns_features(use_raw_forwarder),
+            )
+        ],
+    )
+    client = env.clients[0]
+    connection = env.connections[0].connection
+
+    await client.enable_magic_dns(forward_servers)
+
+    return (client, connection)
 
 
 # TODO: Linux native has to be removed
@@ -150,8 +188,8 @@ async def test_dns(
                 connection_beta, "google.com", dns_server=dns_server_address_beta
             )
 
-        await client_alpha.enable_magic_dns(["10.0.80.82"])
-        await client_beta.enable_magic_dns(["10.0.80.82"])
+        await client_alpha.enable_magic_dns([DNS_SERVER_1_IP])
+        await client_beta.enable_magic_dns([DNS_SERVER_1_IP])
 
         # If everything went correctly, these calls should not timeout
         await query_dns(
@@ -278,8 +316,8 @@ async def test_dns_port(
                 dns_server_address_alpha,
             )
 
-        await client_alpha.enable_magic_dns(["10.0.80.82"])
-        await client_beta.enable_magic_dns(["10.0.80.82"])
+        await client_alpha.enable_magic_dns([DNS_SERVER_1_IP])
+        await client_beta.enable_magic_dns([DNS_SERVER_1_IP])
 
         # A DNS request on port 53 should work
         await query_dns_port(
@@ -394,7 +432,7 @@ async def test_vpn_dns(alpha_ip_stack: IPStack, use_raw_forwarder: bool) -> None
         )
 
         # After we connect to the VPN, enable magic DNS
-        await client_alpha.enable_magic_dns(["10.0.80.82"])
+        await client_alpha.enable_magic_dns([DNS_SERVER_1_IP])
 
         # Test to see if the module is working correctly
         await query_dns(connection, "google.com", dns_server=dns_server_address)
@@ -415,7 +453,7 @@ async def test_vpn_dns(alpha_ip_stack: IPStack, use_raw_forwarder: bool) -> None
             await query_dns(connection, "google.com", dns_server=dns_server_address)
 
         # Test interop with meshnet
-        await client_alpha.enable_magic_dns(["10.0.80.82"])
+        await client_alpha.enable_magic_dns([DNS_SERVER_1_IP])
         await client_alpha.set_meshnet_config(
             api.get_meshnet_config(alpha.id, derp_servers=[])
         )
@@ -473,7 +511,7 @@ async def test_dns_after_mesh_off(
                 connection_alpha, "google.com", dns_server=dns_server_address
             )
 
-        await client_alpha.enable_magic_dns(["10.0.80.82"])
+        await client_alpha.enable_magic_dns([DNS_SERVER_1_IP])
 
         # If everything went correctly, these calls should not timeout
         await query_dns(connection_alpha, "google.com", dns_server=dns_server_address)
@@ -555,8 +593,8 @@ async def test_dns_stability(alpha_ip_stack: IPStack, use_raw_forwarder: bool) -
             conn.connection for conn in env.connections
         ]
 
-        await client_alpha.enable_magic_dns(["10.0.80.82"])
-        await client_beta.enable_magic_dns(["10.0.80.82"])
+        await client_alpha.enable_magic_dns([DNS_SERVER_1_IP])
+        await client_beta.enable_magic_dns([DNS_SERVER_1_IP])
 
         await query_dns(connection_alpha, "google.com", dns_server=dns_server_address)
         await query_dns(connection_beta, "google.com", dns_server=dns_server_address)
@@ -714,20 +752,14 @@ async def test_dns_update(alpha_ip_stack: IPStack, use_raw_forwarder: bool) -> N
         # Don't forward anything yet
         await client_alpha.enable_magic_dns([])
 
-        with pytest.raises(ProcessExecError):
-            await query_dns(connection, "google.com", dns_server=dns_server_address)
+        await assert_no_dns_reply(connection, "google.com", dns_server_address)
 
         # Update forward dns and check if it works now
-        await client_alpha.enable_magic_dns(["10.0.80.82"])
+        await client_alpha.enable_magic_dns([DNS_SERVER_1_IP])
 
         await query_dns(
             connection, "google.com", ["Name:	google.com\nAddress:"], dns_server_address
         )
-
-        # LLT-5532: To be cleaned up...
-        client_alpha.allow_errors([
-            "telio_dns::nameserver.*Lookup failed Error performing lookup: Unknown response code"
-        ])
 
 
 @pytest.mark.asyncio
@@ -736,8 +768,6 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers(
     use_raw_forwarder: bool,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        FIRST_DNS_SERVER = "10.0.80.83"
-        SECOND_DNS_SERVER = "10.0.80.82"
 
         # Define conntracker validator which allows exactly one connection to either
         # FIRST or SECOND dns servers.
@@ -762,7 +792,7 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers(
                         src_ip=LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1][
                             "primary"
                         ],
-                        dst_ip=FIRST_DNS_SERVER,
+                        dst_ip=DNS_SERVER_2_IP,
                         dst_port=53,
                     ),
                     FiveTuple(
@@ -770,7 +800,7 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers(
                         src_ip=LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1][
                             "primary"
                         ],
-                        dst_ip=SECOND_DNS_SERVER,
+                        dst_ip=DNS_SERVER_1_IP,
                         dst_port=53,
                     ),
                 ]
@@ -803,7 +833,7 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers(
         connection_alpha, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
 
-        await client_alpha.enable_magic_dns([FIRST_DNS_SERVER, SECOND_DNS_SERVER])
+        await client_alpha.enable_magic_dns([DNS_SERVER_2_IP, DNS_SERVER_1_IP])
         await query_dns(
             connection_alpha, "google.com", options=["-timeout=1", "-type=a"]
         )
@@ -823,7 +853,7 @@ async def test_dns_aaaa_records() -> None:
         connection_alpha, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
 
-        await client_alpha.enable_magic_dns(["10.0.80.82"])
+        await client_alpha.enable_magic_dns([DNS_SERVER_1_IP])
 
         await query_dns(
             connection_alpha, "beta.nord", string_to_compressed_ipv6(beta.ip_addresses)
@@ -1072,8 +1102,6 @@ async def test_dns_wildcarded_records() -> None:
 @pytest.mark.asyncio
 async def test_dns_ttl_value() -> None:
     async with AsyncExitStack() as exit_stack:
-        FIRST_DNS_SERVER = "10.0.80.83"
-        SECOND_DNS_SERVER = "10.0.80.82"
 
         EXPECTED_TTL_VALUE = 1234
 
@@ -1110,7 +1138,7 @@ async def test_dns_ttl_value() -> None:
         client_alpha, *_ = env.clients
         connection_alpha, *_ = [conn.connection for conn in env.connections]
 
-        await client_alpha.enable_magic_dns([FIRST_DNS_SERVER, SECOND_DNS_SERVER])
+        await client_alpha.enable_magic_dns([DNS_SERVER_2_IP, DNS_SERVER_1_IP])
         await asyncio.sleep(1)
 
         process = await connection_alpha.create_process([
@@ -1179,28 +1207,9 @@ def all_cases(name: str) -> List[str]:
 @pytest.mark.parametrize("use_raw_forwarder", DNS_FORWARDER_PARAMS)
 async def test_dns_no_error_return_code(use_raw_forwarder: bool) -> None:
     async with AsyncExitStack() as exit_stack:
-        FIRST_DNS_SERVER = "10.0.80.83"
-        SECOND_DNS_SERVER = "10.0.80.82"
-
-        env = await setup_mesh_nodes(
-            exit_stack,
-            [
-                SetupParameters(
-                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    ip_stack=IPStack.IPv4v6,
-                    connection_tracker_config=generate_connection_tracker_config(
-                        ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        derp_1_limits=(1, 1),
-                    ),
-                    features=_dns_features(use_raw_forwarder),
-                )
-            ],
+        _, connection_alpha = await setup_forwarder_test_node(
+            exit_stack, use_raw_forwarder, [DNS_SERVER_2_IP, DNS_SERVER_1_IP]
         )
-        client_alpha = env.clients[0]
-        connection_alpha = env.connections[0].connection
-
-        await client_alpha.enable_magic_dns([FIRST_DNS_SERVER, SECOND_DNS_SERVER])
-        await asyncio.sleep(1)
 
         await query_dns_port(
             connection_alpha,
@@ -1209,3 +1218,180 @@ async def test_dns_no_error_return_code(use_raw_forwarder: bool) -> None:
             dns_server=LIBTELIO_DNS_IPV4,
             expected_output=["status: NOERROR", "ANSWER: 0"],
         )
+
+
+@pytest.mark.asyncio
+async def test_dns_upstream_tcp_fallback() -> None:
+    async with AsyncExitStack() as exit_stack:
+        TRUNCATED_FLAG = r";; flags:[^;]*\btc\b"
+        TCP_ONLY_RECORD = r'"tcp-only-a+" "b{255}" "c{100}"'
+
+        _, connection_alpha = await setup_forwarder_test_node(
+            exit_stack,
+            use_raw_forwarder=False,
+            forward_servers=[DNS_SERVER_1_IP],
+        )
+
+        # Control check
+        await query_dns_port(
+            connection_alpha,
+            "53",
+            "txt-tcp-only.com",
+            dns_server=DNS_SERVER_1_IP,
+            extra_host_options=["TXT", "+ignore"],
+            expected_output=[TRUNCATED_FLAG, "ANSWER: 0"],
+        )
+
+        await query_dns_port(
+            connection_alpha,
+            "53",
+            "txt-udp.com",
+            dns_server=LIBTELIO_DNS_IPV4,
+            extra_host_options=["TXT", "+ignore"],
+            expected_output=["status: NOERROR", "ANSWER: 1", '"udp-ok"'],
+        )
+
+        # The client stays on UDP (+ignore), so the full answer can only come from
+        # retry mechanism
+        await query_dns_port(
+            connection_alpha,
+            "53",
+            "txt-tcp-only.com",
+            dns_server=LIBTELIO_DNS_IPV4,
+            extra_host_options=["TXT", "+ignore"],
+            expected_output=["status: NOERROR", "ANSWER: 1", TCP_ONLY_RECORD],
+            unexpected_output=[TRUNCATED_FLAG],
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("use_raw_forwarder", DNS_FORWARDER_PARAMS)
+async def test_dns_no_reply_when_all_upstreams_silent(use_raw_forwarder: bool) -> None:
+    async with AsyncExitStack() as exit_stack:
+        _, connection_alpha = await setup_forwarder_test_node(
+            exit_stack, use_raw_forwarder, [DNS_SERVER_1_IP, DNS_SERVER_2_IP]
+        )
+
+        # Positive control
+        await query_dns_port(
+            connection_alpha,
+            "53",
+            "google.com",
+            dns_server=LIBTELIO_DNS_IPV4,
+            expected_output=["status: NOERROR", "ANSWER: 1"],
+        )
+        # hickory tries upstreams with a 5 s timeout, raw forwarder with 2 s
+        await assert_no_dns_reply(
+            connection_alpha,
+            "silent.com",
+            LIBTELIO_DNS_IPV4,
+            timeout=6 if use_raw_forwarder else 12,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("use_raw_forwarder", DNS_FORWARDER_PARAMS)
+async def test_dns_failover_to_healthy_upstream(use_raw_forwarder: bool) -> None:
+    async with AsyncExitStack() as exit_stack:
+        _, connection_alpha = await setup_forwarder_test_node(
+            exit_stack, use_raw_forwarder, [DNS_SERVER_2_IP, DNS_SERVER_1_IP]
+        )
+
+        # hickory orders upstreams by stats seeded with a random RTT,
+        # only the raw forwarder is guaranteed to hit the silent server first
+        await query_dns_port(
+            connection_alpha,
+            "53",
+            "silent-on-dns-server-2.com",
+            dns_server=LIBTELIO_DNS_IPV4,
+            options="+timeout=10",
+            extra_host_options=["+tries=1"],
+            expected_output=["status: NOERROR", "ANSWER: 1"],
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("use_raw_forwarder", DNS_FORWARDER_PARAMS)
+async def test_dns_non_recursive_query_dropped_or_answered(
+    use_raw_forwarder: bool,
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        _, connection_alpha = await setup_forwarder_test_node(
+            exit_stack, use_raw_forwarder, [DNS_SERVER_1_IP]
+        )
+
+        # Positive control
+        await query_dns_port(
+            connection_alpha,
+            "53",
+            "google.com",
+            dns_server=LIBTELIO_DNS_IPV4,
+            expected_output=["status: NOERROR", "ANSWER: 1"],
+        )
+        # The hickory fork drops RD=0 queries and the raw forwarder relays the upstream
+        # answer. Upstream hickory replies instead: empty NOERROR in 0.24, REFUSED in
+        # 0.26.
+        if use_raw_forwarder:
+            await query_dns_port(
+                connection_alpha,
+                "53",
+                "google.com",
+                dns_server=LIBTELIO_DNS_IPV4,
+                extra_host_options=["+norecurse"],
+                expected_output=["status: NOERROR", "ANSWER: 1"],
+            )
+        else:
+            await assert_no_dns_reply(
+                connection_alpha,
+                "google.com",
+                LIBTELIO_DNS_IPV4,
+                extra_host_options=["+norecurse"],
+            )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "use_raw_forwarder, wrong_id_log, malformed_log",
+    [
+        pytest.param(
+            False,
+            "expected message id",
+            "dropped malformed message",
+            id="hickory",
+        ),
+        pytest.param(
+            True,
+            "Received response for unknown ID",
+            "Failed to get response ID",
+            id="raw",
+        ),
+    ],
+)
+async def test_dns_dropped_responses_not_logged_as_warn(
+    use_raw_forwarder: bool, wrong_id_log: str, malformed_log: str
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        client_alpha, connection_alpha = await setup_forwarder_test_node(
+            exit_stack, use_raw_forwarder, [DNS_SERVER_1_IP]
+        )
+
+        # The upstream sends a junk datagram before the real reply.
+        for name, dropped_log in [
+            ("wrong-id.com", wrong_id_log),
+            ("malformed-first.com", malformed_log),
+        ]:
+            await query_dns_port(
+                connection_alpha,
+                "53",
+                name,
+                dns_server=LIBTELIO_DNS_IPV4,
+                expected_output=["status: NOERROR", "ANSWER: 1"],
+            )
+            await asyncio.wait_for(client_alpha.log.wait_for(dropped_log), 5)
+
+        warnings = re.findall(
+            r"^.*TelioLogLevel\.(?:WARNING|ERROR)\b.*\b(?:hickory_\w*|telio_dns)::.*$",
+            await client_alpha.log.get(),
+            re.MULTILINE,
+        )
+        assert not warnings, warnings

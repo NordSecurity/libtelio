@@ -28,11 +28,11 @@ const CHANNEL_SIZE: usize = 256;
 /// Maximum number of DNS IDs
 const DNS_ID_SPACE: u32 = 65536;
 
-/// Send a result through the response channel, logging a warning if the receiver was dropped
+/// Send a result through the response channel
 macro_rules! send_channel_response {
     ($tx:expr, $result:expr) => {
         if $tx.send($result).is_err() {
-            telio_log_warn!("Response channel dropped");
+            telio_log_debug!("Response channel dropped");
         }
     };
 }
@@ -185,7 +185,7 @@ impl UdpForwarder {
                                 state.addrs().iter().any(|u| u.ip() == src.ip())
                             };
                             if !is_known_upstream {
-                                telio_log_warn!("Received DNS response from unknown source: {src}, ignoring");
+                                telio_log_debug!("Received DNS response from unknown source: {src}, ignoring");
                                 continue;
                             }
 
@@ -194,7 +194,7 @@ impl UdpForwarder {
                                     Self::handle_response(response_bytes, &mut pending);
                                 }
                                 None =>  {
-                                    telio_log_warn!("Failed to receive from upstream resolver, size overflow: {n}");
+                                    telio_log_debug!("Failed to receive from upstream resolver, size overflow: {n}");
                                 }
                             }
                         }
@@ -299,7 +299,7 @@ impl UdpForwarder {
         let internal_id = match get_dns_id(response_bytes) {
             Ok(id) => id,
             Err(e) => {
-                telio_log_warn!("Failed to get response ID: {e}");
+                telio_log_debug!("Failed to get response ID: {e}");
                 return;
             }
         };
@@ -307,13 +307,13 @@ impl UdpForwarder {
         let entry = match pending.remove(&internal_id) {
             Some(e) => e,
             None => {
-                telio_log_warn!("Received response for unknown ID: {internal_id}");
+                telio_log_debug!("Received response for unknown ID: {internal_id}");
                 return;
             }
         };
 
         if entry.respond_to.is_closed() {
-            telio_log_warn!("Caller dropped for request: {internal_id}");
+            telio_log_debug!("Caller dropped for request: {internal_id}");
             return;
         }
 
@@ -352,7 +352,7 @@ impl UdpForwarder {
             };
 
             if is_closed {
-                telio_log_warn!("Caller dropped for: {internal_id}");
+                telio_log_debug!("Caller dropped for: {internal_id}");
                 continue;
             }
 
