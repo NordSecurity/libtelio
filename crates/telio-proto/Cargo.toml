@@ -34,7 +34,7 @@ rustls-webpki = { version = "0.103.13", optional = true , default-features = fal
 aws-lc-rs = { version = "=1.18.1", optional = true , default-features = false }
 tokio-stream = { version = "0.1.18", optional = true , default-features = false }
 tokio-rustls = { version = "0.26.4", default-features = false, optional = true }
-tonic = { version = "0.14.6", optional = true , default-features = false, features = ["channel"] }
+tonic = { version = "0.14.6", optional = true , default-features = false }
 tonic-prost = { version = "0.14", optional = true }
 tower = { version = "0.5.3", optional = true }
 
