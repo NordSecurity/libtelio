@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use enum_map::Enum;
 use ipnet::PrefixLenError;
 use std::time::Duration;
-use telio_crypto::{PublicKey, encryption};
+use telio_crypto::PublicKey;
 use telio_utils::exponential_backoff;
 use thiserror::Error as TError;
 
@@ -15,7 +15,7 @@ use telio_proto::{PlaintextPongerMsg, Session};
 use telio_task::io::chan;
 
 #[derive(Debug, TError)]
-pub enum Error {
+pub enum ErrorVariant {
     #[error(transparent)]
     PrefixLenError(#[from] PrefixLenError),
     #[error(transparent)]
@@ -31,6 +31,7 @@ pub enum Error {
     #[error(transparent)]
     WireGuardError(#[from] telio_wg::Error),
     #[error(transparent)]
+    #[cfg(debug_assertions)]
     AddressParseError(#[from] std::net::AddrParseError),
     #[error("WireGuard listening port is missing")]
     NoWGListenPort,
@@ -43,10 +44,12 @@ pub enum Error {
     #[error(transparent)]
     IGDRemovePortError(#[from] igd::RemovePortError),
     #[error(transparent)]
+    #[cfg(debug_assertions)]
     IGDGetExternalIpError(#[from] igd::GetExternalIpError),
     #[error(transparent)]
     IGDSearchError(#[from] igd::SearchError),
     #[error(transparent)]
+    #[cfg(debug_assertions)]
     IGDAddAnyPortError(#[from] igd::AddAnyPortError),
     #[error(transparent)]
     IGDAddPortError(#[from] igd::AddPortError),
@@ -59,6 +62,7 @@ pub enum Error {
     RuntimeError(#[from] telio_task::ExecError),
     /// Component was not configured for operation
     #[error("Component was not configured for operation")]
+    #[cfg(debug_assertions)]
     NotConfigured,
     #[error("Endpoint provider is paused")]
     EndpointProviderPaused,
@@ -71,7 +75,8 @@ pub enum Error {
     #[error("Stun endpoint provider not configured")]
     StunNotConfigured,
     #[error("Encryption failed: {0}")]
-    EncryptionFailed(#[from] encryption::Error),
+    #[cfg(debug_assertions)]
+    EncryptionFailed(#[from] telio_crypto::encryption::Error),
     #[error("Cannot find endpoint in local cache")]
     LocalCacheError,
     /// Failed to get upnp service
@@ -80,6 +85,15 @@ pub enum Error {
     /// Did not find matching endpoint with the IGD subnet
     #[error("No endpoint with matching subnet to IGD")]
     NoMatchingLocalEndpoint,
+}
+
+telio_utils::traced_error! {
+    /// Endpoint provider error, carries the backtrace of the place where it was created
+    pub struct Error(ErrorVariant);
+    reuse_backtrace {
+        ErrorVariant::WireGuardError(e) => e,
+        ErrorVariant::ExponentialBackoffError(e) => e,
+    }
 }
 
 #[derive(PartialEq, Eq, Hash, Debug, Copy, Clone, Enum)]

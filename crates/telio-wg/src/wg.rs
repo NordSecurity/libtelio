@@ -32,7 +32,10 @@ use telio_task::{
 };
 
 use crate::{
-    adapter::{self, Adapter, AdapterType, Error, FirewallResetConnsCb, IsMeshnetEnabledCb, Tun},
+    adapter::{
+        self, Adapter, AdapterType, Error, ErrorVariant, FirewallResetConnsCb, IsMeshnetEnabledCb,
+        Tun,
+    },
     link_detection::{self, LinkDetection, LinkDetectionUpdateResult},
     uapi::{self, AnalyticsEvent, Cmd, Event, Interface, Peer, PeerState, Response, UpdateReason},
     FirewallInboundCb, FirewallOutboundCb,
@@ -91,7 +94,7 @@ pub trait WireGuard: Send + Sync + 'static {
 
 fn check_mtu(mtu: u32) -> Result<(), Error> {
     if mtu < adapter::MIN_MTU {
-        return Err(Error::MtuTooLow(mtu));
+        return Err(ErrorVariant::MtuTooLow(mtu).into());
     }
     Ok(())
 }
@@ -342,7 +345,7 @@ impl DynamicWg {
         if let Some(adapter) = tests::RUNTIME_ADAPTER.lock().unwrap().take() {
             Ok(adapter)
         } else {
-            Err(Error::RestartFailed)
+            Err(ErrorVariant::RestartFailed.into())
         }
     }
 
@@ -374,7 +377,7 @@ impl WireGuard for DynamicWg {
             }
             let elapsed_time = start.elapsed()?;
             if elapsed_time > d {
-                break telio_err_with_log!(Error::PortAssignmentTimeoutError);
+                break telio_err_with_log!(Error::from(ErrorVariant::PortAssignmentTimeoutError));
             }
 
             sleep(Duration::from_millis(10)).await;
@@ -432,7 +435,7 @@ impl WireGuard for DynamicWg {
                     new_peer,
                     to
                 );
-                return Err(Error::DuplicateAllowedIPsError);
+                return Err(ErrorVariant::DuplicateAllowedIPsError.into());
             }
 
             if let Some(old_peer) = to.peers.get(&new_peer.public_key) {
@@ -598,7 +601,7 @@ impl State {
                     let _ = libtelio_event.send(Box::new(err_event));
                 }
             }
-            return Err(Error::InternalError("Interface gone"));
+            return Err(ErrorVariant::InternalError("Interface gone").into());
         }
 
         Ok(ret)
@@ -665,7 +668,7 @@ impl State {
         self.event
             .send(Box::new(event))
             .await
-            .map_err(|_| Error::InternalError("Failed to send node event"))
+            .map_err(|_| ErrorVariant::InternalError("Failed to send node event").into())
     }
 
     #[allow(mpsc_blocking_send)]
@@ -679,9 +682,13 @@ impl State {
 
         // Notify all disconnects
         for key in &diff_keys.delete_keys {
-            let peer = from.peers.get(key).cloned().ok_or(Error::InternalError(
-                "Disconnected peer missing from old list",
-            ))?;
+            let peer = from
+                .peers
+                .get(key)
+                .cloned()
+                .ok_or(ErrorVariant::InternalError(
+                    "Disconnected peer missing from old list",
+                ))?;
 
             // Remove all disconnected peers from link detection mechanism
             if let Some(link_detection) = &mut self.link_detection {
@@ -699,15 +706,14 @@ impl State {
 
         // Notify all new connections
         for key in &diff_keys.insert_keys {
-            let peer = to
-                .peers
-                .get(key)
-                .ok_or(Error::InternalError("New peer missing from new list"))?;
+            let peer = to.peers.get(key).ok_or(ErrorVariant::InternalError(
+                "New peer missing from new list",
+            ))?;
 
             let stats = self
                 .stats
                 .get(key)
-                .ok_or(Error::InternalError("No stats available for peer"))?;
+                .ok_or(ErrorVariant::InternalError("No stats available for peer"))?;
 
             // Node is new and default LinkState is down. Save it before sending the event
             if let Some(link_detection) = &mut self.link_detection {
@@ -926,9 +932,9 @@ impl State {
         // would collide with HashSet<&PublicKey> and with from=&self.interface,
         // which was used throughout this function for better readability.
         if Self::is_same_interface(&self.interface, &to) {
-            return Err(Error::InternalError(
-                "Same interface received in update function",
-            ));
+            return Err(
+                ErrorVariant::InternalError("Same interface received in update function").into(),
+            );
         }
 
         let diff_keys = self.update_calculate_changes(&to);
@@ -1185,7 +1191,7 @@ pub mod tests {
         }
 
         async fn set_tun(&self, _tun: Tun) -> Result<(), Error> {
-            Err(Error::UnsupportedAdapter)
+            Err(ErrorVariant::UnsupportedAdapter.into())
         }
 
         async fn set_adapter_mtu(&self, mtu: Option<u32>) -> Result<(), AdapterError> {
@@ -1465,8 +1471,11 @@ pub mod tests {
         let Env { adapter, wg, .. } = setup().await;
 
         assert!(matches!(
-            wg.set_adapter_mtu(Some(adapter::MIN_MTU - 1)).await,
-            Err(Error::MtuTooLow(_))
+            wg.set_adapter_mtu(Some(adapter::MIN_MTU - 1))
+                .await
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::MtuTooLow(_))
         ));
 
         adapter.lock().await.expect_stop().return_once(|| ());
@@ -1494,7 +1503,10 @@ pub mod tests {
             Duration::from_millis(DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS),
         )
         .await;
-        assert!(matches!(result, Err(Error::MtuTooLow(_))));
+        assert!(matches!(
+            result.as_ref().map_err(|e| e.variant()),
+            Err(ErrorVariant::MtuTooLow(_))
+        ));
     }
 
     #[tokio::test(start_paused = true)]
@@ -1506,10 +1518,13 @@ pub mod tests {
             .await
             .expect_set_adapter_mtu()
             .times(1)
-            .returning(|_| Err(AdapterError::UnsupportedAdapter));
+            .returning(|_| Err(ErrorVariant::UnsupportedAdapter.into()));
         assert!(matches!(
-            wg.set_adapter_mtu(Some(1400)).await,
-            Err(Error::UnsupportedAdapter)
+            wg.set_adapter_mtu(Some(1400))
+                .await
+                .as_ref()
+                .map_err(|e| e.variant()),
+            Err(ErrorVariant::UnsupportedAdapter)
         ));
 
         adapter.lock().await.expect_stop().return_once(|| ());

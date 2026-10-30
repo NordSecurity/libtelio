@@ -570,7 +570,11 @@ impl Cli {
                     })));
                 }
 
-                let ep = cli_try!(res; server.endpoint.ok_or(telio_core::device::Error::EndpointNotProvided));
+                let ep = cli_try!(res; server.endpoint.ok_or_else(|| {
+                    telio_core::device::Error::from(
+                        telio_core::device::ErrorVariant::EndpointNotProvided,
+                    )
+                }));
                 let config = Arc::new(VpnConnectionConfigBuilder::new(server.public_key, ep))
                     .apply_some(postquantum.then_some(()), |b, _| b.force_pq())
                     .build();
