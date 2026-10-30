@@ -16,8 +16,8 @@ alias d := deny
 [private]
 alias p := prepush
 
-nightly := "nightly-2026-07-16" # Matching stable version below, see: https://releases.rs/docs/1.98.1/ (1.98.0 was branched on 2026-07-03 - this is closest main with miscompilation fix from .1)
-rust_stable := "1.98.1"
+nightly := "nightly-2026-10-11" # 1.99.0 was branched on 2026-08-14 - this is closest main with all fixes from .1, see https://releases.rs/docs/1.99.1/
+rust_stable := "1.99.1"
 
 # Run all rust tests
 test:
