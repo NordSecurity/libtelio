@@ -16,6 +16,45 @@ check runs only for MSVC builds.
 
 The commands below check the same things by hand. On Windows they also compare the GUID and age.
 
+## Where the addresses come from
+
+When libtelio panics, it logs a backtrace at ERROR level, one line per function:
+
+```text
+backtrace:   7 libtelio.so 6e432711b2782a8c5e9f0190da1c6912a564a63e 0x5786dd uniffi_telio_fn_method_telio_set_meshnet
+```
+
+The columns are the library, its ID, the address relative to the start of the library and the
+function name. Errors returned over FFI carry the same data: `TelioError.backtrace().functions()`
+gives the library, ID, address and name of each function. Release libraries only contain their
+exported functions, so the name is often wrong. Use the ID to pick the debug file and pass the
+address to the commands below. Most addresses point at the instruction after a call. Subtract 1
+from them to get the line of the call itself, for example `0x5786dd` becomes `0x5786dc`.
+
+## Resolving addresses with a script
+
+`ci/symbolize.py` does the manual steps below in one go. It checks that the debug file belongs to
+the library, then prints the function, file and line of each address. Inlined functions are
+printed innermost first:
+
+```bash
+ci/symbolize.py --return-address libtelio.so libtelio.so.debug 0x5786dd
+```
+
+```text
+libtelio.so and libtelio.so.debug have ID 6e432711b2782a8c5e9f0190da1c6912a564a63e
+0x5786dd
+  <telio_core::device::Device>::set_config at .../crates/telio-core/src/device.rs:766:29
+```
+
+The ID is printed in the same format as the ID column of libtelio's backtraces, so the two can be
+compared directly. It works the same way for `libtelio.dylib` with `libtelio.dylib.dSYM` (the dSYM
+of one architecture) and for `telio.dll` with `telio.pdb`. On Windows it adds the image base
+itself, and the PDB must be next to the DLL. Pass `--return-address` for addresses from a
+backtrace, so it looks up the call (the address minus 1). `--json` prints the result as JSON. It
+needs `llvm-symbolizer`, `llvm-readelf`, `llvm-dwarfdump`, `llvm-readobj` and `llvm-pdbutil` from
+LLVM 14 or newer, on `PATH` or in the directory passed with `--llvm-bin`.
+
 ## Where the files are
 
 | Platform | Library | Debug file | ID |

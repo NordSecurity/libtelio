@@ -11,7 +11,7 @@ use telio_crypto::PublicKey;
 use telio_proto::{CallMeMaybeMsg, Session};
 
 #[derive(Debug, TError)]
-pub enum Error {
+pub enum ErrorVariant {
     #[error("Received pong packet for unkown session")]
     UnkownSessionForRxedPongPacket,
     #[error("Endpoint provider error")]
@@ -32,6 +32,15 @@ pub enum Error {
     UnexpectedPeer(PublicKey),
     #[error("Codec error: {0}")]
     CodecError(#[from] telio_proto::CodecError),
+}
+
+telio_utils::traced_error! {
+    /// Connectivity check error, with the backtrace of the place where it was created
+    pub struct Error(ErrorVariant);
+    reuse_backtrace {
+        ErrorVariant::EndpointProviderError(e) => e,
+        ErrorVariant::ExponentialBackoffError(e) => e,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

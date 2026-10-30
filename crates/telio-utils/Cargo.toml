@@ -14,6 +14,7 @@ arbitrary = ["dep:proptest-derive", "dep:proptest"]
 backtrace = "0.3.76"
 blake3.workspace = true
 boot-time = { git = "https://github.com/NordSecurity/boot_time.git", rev = "14f9a90d43a601ae50e69044894538c1398120a7" }
+findshlibs = "0.10.2"
 futures.workspace = true
 hashlink.workspace = true
 ipnet.workspace = true
@@ -30,6 +31,7 @@ sn_fake_clock = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
+uuid.workspace = true
 zeroize = { workspace = true, default-features = false }
 
 [dev-dependencies]

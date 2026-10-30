@@ -24,7 +24,6 @@ x25519-dalek.workspace = true
 
 telio-crypto.workspace = true
 telio-model.workspace = true
-telio-proto.workspace = true
 telio-sockets.workspace = true
 telio-task.workspace = true
 telio-utils.workspace = true

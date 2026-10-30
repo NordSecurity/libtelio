@@ -35,9 +35,9 @@ pub enum Event {
     Rekey(Keys),
 }
 
-/// The PQ module error type
+/// Kind of the PQ module error
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum ErrorVariant {
     /// IO error
     #[error("IO: {0:?}")]
     Io(#[from] io::Error),
@@ -52,15 +52,20 @@ pub enum Error {
     Generic(String),
 }
 
+telio_utils::traced_error! {
+    /// The PQ module error type, carries the backtrace of the place where it was created
+    pub struct Error(ErrorVariant);
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
-impl From<String> for Error {
+impl From<String> for ErrorVariant {
     fn from(value: String) -> Self {
         Self::Generic(value)
     }
 }
 
-impl From<&str> for Error {
+impl From<&str> for ErrorVariant {
     fn from(value: &str) -> Self {
         Self::Generic(value.to_string())
     }

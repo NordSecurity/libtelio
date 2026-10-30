@@ -23,7 +23,7 @@ use telio_model::{constants::DNS_PORT, features::TtlValue};
 use telio_utils::{telio_log_debug, telio_log_warn};
 use thiserror::Error;
 
-use crate::error::{Error, Result as DnsResult};
+use crate::error::{ErrorVariant, Result as DnsResult};
 pub(crate) const NORD_ZONE: &str = "nord.";
 pub(crate) const NORD_ZONE_SUFFIX: &str = ".nord.";
 
@@ -197,7 +197,7 @@ impl AuthoritativeZone {
         // TODO: rewrite code so that this assert is not needed.
         for domain in records.keys() {
             if !domain.contains(name) {
-                return Err(Error::RecordOutsideZone(domain.into(), name.into()));
+                return Err(ErrorVariant::RecordOutsideZone(domain.into(), name.into()).into());
             }
         }
         let zone_name = Name::from_str(name)?;
@@ -863,14 +863,14 @@ mod error_tests {
         records
     }
 
-    // Test: returns Error::RecordOutsideZone if record domain does not match zone
+    // Test: returns ErrorVariant::RecordOutsideZone if record domain does not match zone
     #[tokio::test]
     async fn returns_record_outside_zone_error() {
         let records = make_records("domain.bad.", IpAddr::from([1, 2, 3, 4]));
         let result = AuthoritativeZone::new("nord", &records, TtlValue(60)).await;
         assert!(matches!(
-            result,
-            Err(Error::RecordOutsideZone(ref domain, ref zone))
+            result.as_ref().map_err(|e| e.variant()),
+            Err(ErrorVariant::RecordOutsideZone(domain, zone))
                 if domain == "domain.bad." && zone == "nord"
         ));
     }
