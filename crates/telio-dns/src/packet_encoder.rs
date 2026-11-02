@@ -22,7 +22,7 @@ const RR_HEADER_SIZE: usize = 12;
 /// All answer RRs are expected to be for the same query,
 /// so a single constant covers every record.
 /// If we ever change the response layout this constant must be revisited.
-const QNAME_TAG: u16 = 0xC000 + DNS_HEADER_OFFSET as u16;
+pub(crate) const QNAME_TAG: u16 = 0xC000 + DNS_HEADER_OFFSET as u16;
 
 /// Constant values for .nord SOA record
 const SOA_MNAME: &str = "mesh.nordsec.com.";
