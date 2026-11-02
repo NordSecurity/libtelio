@@ -7,23 +7,27 @@ It:
      in order, to changelog.md on the gh-pages branch, then triggers a Pages redeploy
   3. writes the raw block to --block-out (used for the GitLab release notes),
   4. opens a PR on the source branch to remove the used .unreleased/ files and, on a
-     stable (non-rc) tag, bump Cargo.toml.
+     stable (non-rc) tag, bump the version in Cargo.toml and Cargo.lock (`cargo set-version`).
+     A failure here is logged but does not fail the release (except with --dry-run).
 
-Needs GITHUB_WRITE_TOKEN. Imports generate_changelog and github_helpers (same dir).
+Needs GITHUB_WRITE_TOKEN, cargo and cargo-edit. Imports generate_changelog and github_helpers (same dir).
 """
 
 import argparse
+import json
 import os
 import re
+import subprocess
 import tempfile
+import traceback
 
-import tomlkit
 from packaging.version import Version
 
 import generate_changelog as gc
 from github_helpers import git_clone, github_api_request, has_changes, run
 
 GH_PAGES_BRANCH = "gh-pages"
+CRATE_NAME = "telio"
 CHANGELOG_UPDATED_EVENT = "changelog-updated"
 # Accepted release tags: a stable vX.Y.Z or a pre-release vX.Y.Z-rcN
 RELEASE_TAG_REGEX = re.compile(r"^v\d+\.\d+\.\d+(-rc\d+)?$")
@@ -56,20 +60,24 @@ def next_release_version(tag: str, source_branch: str, override: str) -> str:
     return f"{major}.{minor}.{patch + 1}"  # next patch
 
 
-def get_cargo_version(cargo_path: str) -> str:
-    """Read the [package] version from Cargo.toml."""
-    with open(cargo_path, "r", encoding="utf-8") as f:
-        doc = tomlkit.parse(f.read())
-    return str(doc["package"]["version"])
-
-
-def set_cargo_version(cargo_path: str, new_version: str) -> None:
-    """Set the [package] version in Cargo.toml"""
-    with open(cargo_path, "r", encoding="utf-8") as f:
-        doc = tomlkit.parse(f.read())
-    doc["package"]["version"] = new_version
-    with open(cargo_path, "w", encoding="utf-8") as f:
-        f.write(tomlkit.dumps(doc))
+def get_cargo_version(manifest_dir: str) -> str:
+    """Read the version of CRATE_NAME as cargo resolves it (e.g. with workspace inheritance)."""
+    res = subprocess.run(
+        ["cargo", "metadata", "--no-deps", "--offline", "--format-version", "1"],
+        cwd=manifest_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if res.returncode != 0:
+        raise RuntimeError(f"cargo metadata failed ({res.returncode}):\n{res.stderr}")
+    packages = json.loads(res.stdout)["packages"]
+    versions = [p["version"] for p in packages if p["name"] == CRATE_NAME]
+    if len(versions) != 1:
+        raise RuntimeError(
+            f"Expected one {CRATE_NAME!r} package in cargo metadata, found {len(versions)}"
+        )
+    return versions[0]
 
 
 def build_and_insert_block(
@@ -147,17 +155,16 @@ def open_cleanup_pr(args, token, source_branch, tmp) -> None:
 
     actions = []
     if is_stable_tag(args.tag):
-        cargo_path = os.path.join(src, "Cargo.toml")
         new_version = next_release_version(args.tag, source_branch, args.next_version)
-        current_version = get_cargo_version(cargo_path)
+        current_version = get_cargo_version(src)
         if Version(new_version) <= Version(current_version):
             raise RuntimeError(
                 f"Refusing to bump {source_branch} Cargo.toml from {current_version} to "
                 f"{new_version}: not a forward bump. Releasing an older tag, or is the branch "
                 f"already ahead? Provide a higher RELEASE_NEXT_VERSION if this is intentional."
             )
-        set_cargo_version(cargo_path, new_version)
-        run("git", "add", "Cargo.toml", cwd=src)
+        run("cargo", "set-version", "--package", CRATE_NAME, new_version, cwd=src)
+        run("git", "add", "Cargo.toml", "Cargo.lock", cwd=src)
         actions.append(f"bump to {new_version}")
     actions.append("clean up .unreleased")
     summary = f"{' and '.join(actions)} for {args.tag}"
@@ -202,7 +209,7 @@ def open_cleanup_pr(args, token, source_branch, tmp) -> None:
                 f"(source branch `{source_branch}`).\n\n"
                 "- Removes the `.unreleased/` files consumed by this release."
                 + (
-                    "\n- Bumps `Cargo.toml` to the next version."
+                    "\n- Bumps `Cargo.toml` (and `Cargo.lock`) to the next version."
                     if is_stable_tag(args.tag)
                     else ""
                 )
@@ -283,7 +290,21 @@ def main():
         if args.skip_pr:
             print("--skip-pr set; not opening cleanup PR.")
             return
-        open_cleanup_pr(args, token, source_branch, tmp)
+        try:
+            open_cleanup_pr(args, token, source_branch, tmp)
+        except Exception:  # the cleanup PR must never block the release
+            if args.dry_run:
+                raise
+            traceback.print_exc()
+            print(
+                "WARNING: cleanup PR failed; the release itself is unaffected. "
+                f"Open it manually on {source_branch}: remove the consumed .unreleased/ files"
+                + (
+                    " and bump Cargo.toml and Cargo.lock."
+                    if is_stable_tag(args.tag)
+                    else "."
+                )
+            )
 
 
 if __name__ == "__main__":
