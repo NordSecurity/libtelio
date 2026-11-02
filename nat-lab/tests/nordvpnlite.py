@@ -212,6 +212,7 @@ class NordVpnLite:
     SOCKET_CHECK_INTERVAL_S = 0.5
     NORDVPNLITE_CMD_CHECK_INTERVAL_S = 10  # TODO (LLT-6693): revert back to 1
     DAEMON_STOP_TIMEOUT_S = 10
+    CHECK_CALL_TIMEOUT_S = 3
 
     def __init__(
         self,
@@ -453,20 +454,46 @@ class NordVpnLite:
     async def _wait_until_false(
         self, check: Callable[[], Awaitable[bool]], timeout_s: float
     ) -> bool:
-        """Poll `check` until it returns False, or until `timeout_s` elapses"""
+        """Poll `check` until it returns False, or until `timeout_s` elapses,
+        with each call bounded by its own timeout"""
+        check_name = getattr(check, "__name__", repr(check))
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_s
 
-        async def poll() -> None:
-            while await check():
-                await asyncio.sleep(self.SOCKET_CHECK_INTERVAL_S)
-
-        task = asyncio.ensure_future(poll())
+        # Cancelled docker execs can take a while to clean up, so retry without
+        # waiting for them and only collect them at the end
+        abandoned: List[asyncio.Future] = []
+        timed_out = False
         try:
-            await asyncio.wait_for(task, timeout_s)
-        except asyncio.TimeoutError:
-            if not task.cancelled():
-                raise
-            return False
-        return True
+            while True:
+                task = asyncio.ensure_future(check())
+                done, _ = await asyncio.wait({task}, timeout=self.CHECK_CALL_TIMEOUT_S)
+                if task in done:
+                    if not task.result():
+                        return True
+                    timed_out = False
+                else:
+                    task.cancel()
+                    abandoned.append(task)
+                    timed_out = True
+                    log.warning(
+                        "%s didn't complete within %ss",
+                        check_name,
+                        self.CHECK_CALL_TIMEOUT_S,
+                    )
+                if loop.time() >= deadline:
+                    break
+                await asyncio.sleep(self.SOCKET_CHECK_INTERVAL_S)
+        finally:
+            if abandoned:
+                await asyncio.gather(*abandoned, return_exceptions=True)
+
+        if timed_out:
+            raise TimeoutError(
+                f"{check_name} didn't complete within {self.CHECK_CALL_TIMEOUT_S}s,"
+                f" state unknown after {timeout_s}s"
+            )
+        return False
 
     async def remove_config(self, path: Path) -> None:
         await self.connection.create_process(["rm", "-f", str(path)]).execute()
