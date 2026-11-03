@@ -464,7 +464,11 @@ export NATLAB_SKIP_SETUP_CHECKS=1
 uv run python3 natlab.py start
 ```
 
-- Force a clean (no-cache) rebuild of the base image with `--rebuild` (or `NATLAB_BUILD_NO_CACHE=1`):
+- natlab start first tries to pull a prebuilt base image from `$LIBTELIO_ENV_SEC_CONTAINER_REGISTRY/nord-projects/nordvpn/infra/llt/automation/docker/libtelio/natlab_base:<hash>` and tags it as `nat-lab:base`. The hash covers [Dockerfile](Dockerfile), [Dockerfile.dockerignore](Dockerfile.dockerignore), every file the ignore file lets into the build context (including the generated `bin/grpc_protobuf`), `LIBTELIO_ENV_NAT_LAB_DEPS_TAG` and `BASE_IMAGE_CACHE_VERSION` in [natlab.py](natlab.py). If the pull fails, the image is built locally as before. CI publishes the image from libtelio `main` with `natlab.py publish-base`.
+
+- When the Dockerfile needs a new file from the build context, add it to [Dockerfile.dockerignore](Dockerfile.dockerignore). Only `*`, `!<path>` and `**/__pycache__` lines are supported. Bump `BASE_IMAGE_CACHE_VERSION` to republish the image without changing its inputs, for example to pick up newer Python packages.
+
+- Force a clean (no-cache) local rebuild of the base image, skipping the pull, with `--rebuild` (or `NATLAB_BUILD_NO_CACHE=1`):
 
 ```bash
 uv run python3 natlab.py start --rebuild

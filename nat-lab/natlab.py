@@ -2,13 +2,15 @@
 
 import argparse
 import errno
+import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
 import time
-from typing import List, Tuple
+from enum import Enum
+from typing import List, Optional, Tuple
 
 # isort: off
 PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/..")
@@ -20,6 +22,33 @@ NATLAB_CONTAINER_HEALTHY_WAIT_SECONDS = 1200
 
 BUILD_PROFILE = "base"
 BASE_IMAGE_SERVICE = "base"
+BASE_IMAGE_NAME = "nat-lab:base"
+BASE_IMAGE_DOCKERFILE = "Dockerfile"
+BASE_IMAGE_DOCKERIGNORE = f"{BASE_IMAGE_DOCKERFILE}.dockerignore"
+BASE_IMAGE_REPOSITORY = (
+    "nord-projects/nordvpn/infra/llt/automation/docker/libtelio/natlab_base"
+)
+BASE_IMAGE_CACHE_VERSION = 1
+
+DOCKERIGNORE_EXCLUDE_ALL = "*"
+DOCKERIGNORE_INCLUDE_PREFIX = "!"
+PYCACHE_DIR = "__pycache__"
+DOCKERIGNORE_EXCLUDE_PYCACHE = f"**/{PYCACHE_DIR}"
+
+CONTAINER_REGISTRY_ENV = "LIBTELIO_ENV_SEC_CONTAINER_REGISTRY"
+ENS_PROTO_PATH = "../dist/linux/ens.proto"
+
+BUILD_ENV = {
+    "COMPOSE_DOCKER_CLI_BUILD": "1",
+    "DOCKER_BUILDKIT": "1",
+    "LIBTELIO_ENV_NAT_LAB_DEPS_TAG": LIBTELIO_ENV_NAT_LAB_DEPS_TAG,
+}
+
+
+class BaseImageSource(Enum):
+    REGISTRY = "registry"
+    LOCAL_BUILD = "local build"
+
 
 DIRECT_ROUTING_OVERRIDE_FILE = "docker-compose.override.yml"
 DIRECT_ROUTING_OVERRIDE = """\
@@ -54,6 +83,111 @@ def docker_server_version() -> Tuple[int, int]:
     if not match:
         raise RuntimeError(f"Cannot parse docker server version: {output!r}")
     return int(match.group(1)), int(match.group(2))
+
+
+def base_image_context_paths() -> List[str]:
+    with open(BASE_IMAGE_DOCKERIGNORE, "r", encoding="utf-8") as file:
+        lines = [line.strip() for line in file if line.strip()]
+    if not lines or lines[0] != DOCKERIGNORE_EXCLUDE_ALL:
+        raise RuntimeError(
+            f"{BASE_IMAGE_DOCKERIGNORE} must start with '{DOCKERIGNORE_EXCLUDE_ALL}'"
+        )
+
+    paths = []
+    for line in lines[1:]:
+        if line == DOCKERIGNORE_EXCLUDE_PYCACHE:
+            continue
+        if not line.startswith(DOCKERIGNORE_INCLUDE_PREFIX):
+            raise RuntimeError(
+                f"Unsupported line in {BASE_IMAGE_DOCKERIGNORE}: {line!r}"
+            )
+        paths.append(line.removeprefix(DOCKERIGNORE_INCLUDE_PREFIX).rstrip("/"))
+    return paths
+
+
+def context_files(path: str) -> List[str]:
+    if os.path.isfile(path):
+        return [path]
+    if not os.path.isdir(path):
+        raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), path)
+
+    files = []
+    for root, dirs, names in os.walk(path):
+        dirs[:] = [name for name in dirs if name != PYCACHE_DIR]
+        files += [os.path.join(root, name) for name in names]
+    return files
+
+
+def base_image_hash() -> str:
+    inputs = [BASE_IMAGE_DOCKERFILE, BASE_IMAGE_DOCKERIGNORE] + sorted(
+        file for path in base_image_context_paths() for file in context_files(path)
+    )
+    digest = hashlib.sha256(
+        f"{BASE_IMAGE_CACHE_VERSION}\0{LIBTELIO_ENV_NAT_LAB_DEPS_TAG}\0".encode()
+    )
+    for path in inputs:
+        with open(path, "rb") as file:
+            content = file.read()
+        digest.update(f"{path}\0{len(content)}\0".encode())
+        digest.update(content)
+    return digest.hexdigest()
+
+
+def base_image_ref(registry: str) -> str:
+    return f"{registry}/{BASE_IMAGE_REPOSITORY}:{base_image_hash()}"
+
+
+def command_succeeds(command: List[str]) -> bool:
+    print(f"|EXECUTE| {' '.join(command)}")
+    result = subprocess.run(command, check=False, stdout=subprocess.DEVNULL)
+    return result.returncode == 0
+
+
+def pull_base_image() -> BaseImageSource:
+    registry = os.environ.get(CONTAINER_REGISTRY_ENV)
+    if not registry:
+        print(f"{CONTAINER_REGISTRY_ENV} is not set, building {BASE_IMAGE_NAME}")
+        return BaseImageSource.LOCAL_BUILD
+
+    ref = base_image_ref(registry)
+    if not command_succeeds(["docker", "pull", "--quiet", ref]):
+        print(f"Cannot pull {ref}, building {BASE_IMAGE_NAME}")
+        return BaseImageSource.LOCAL_BUILD
+
+    run_command(["docker", "tag", ref, BASE_IMAGE_NAME])
+    run_command(["docker", "rmi", ref])
+    return BaseImageSource.REGISTRY
+
+
+def publish_base_image(push_docker_config: Optional[str]) -> None:
+    registry = os.environ.get(CONTAINER_REGISTRY_ENV)
+    if not registry:
+        raise RuntimeError(f"{CONTAINER_REGISTRY_ENV} must be set to publish")
+
+    generate_grpc(ENS_PROTO_PATH)
+    ref = base_image_ref(registry)
+    if command_succeeds(["docker", "manifest", "inspect", ref]):
+        print(f"{ref} is already published")
+        return
+
+    run_command(
+        [
+            "docker",
+            "compose",
+            "--profile",
+            BUILD_PROFILE,
+            "build",
+            "--no-cache",
+            BASE_IMAGE_SERVICE,
+        ],
+        env=BUILD_ENV,
+    )
+    run_command(["docker", "tag", BASE_IMAGE_NAME, ref])
+    push_command = ["docker"]
+    if push_docker_config:
+        push_command += ["--config", push_docker_config]
+    run_command(push_command + ["push", ref])
+    run_command(["docker", "rmi", ref])
 
 
 def br_netfilter_active() -> bool:
@@ -263,29 +397,27 @@ def start(
     if skip_keywords is None:
         skip_keywords = []
 
-    generate_grpc("../dist/linux/ens.proto")
+    generate_grpc(ENS_PROTO_PATH)
 
     configure_direct_routing_override()
 
     if "GITLAB_CI" in os.environ:
         disable_client_host_ports()
 
+    force_rebuild = rebuild or "NATLAB_BUILD_NO_CACHE" in os.environ
     build_command = ["docker", "compose", "--profile", BUILD_PROFILE, "build"]
     # Build from cache locally for fast iteration. In CI always force a clean
     # rebuild so images are fully reproducible and never reuse a persisted layer.
-    if rebuild or "NATLAB_BUILD_NO_CACHE" in os.environ or "GITLAB_CI" in os.environ:
+    if force_rebuild or "GITLAB_CI" in os.environ:
         build_command.append("--no-cache")
 
+    services = services_to_build()
+    if not force_rebuild and pull_base_image() == BaseImageSource.REGISTRY:
+        services.remove(BASE_IMAGE_SERVICE)
+
     # One build at a time: parallel builds can crash dockerd (moby/moby#48564)
-    for service in services_to_build():
-        run_command(
-            build_command + [service],
-            env={
-                "COMPOSE_DOCKER_CLI_BUILD": "1",
-                "DOCKER_BUILDKIT": "1",
-                "LIBTELIO_ENV_NAT_LAB_DEPS_TAG": LIBTELIO_ENV_NAT_LAB_DEPS_TAG,
-            },
-        )
+    for service in services:
+        run_command(build_command + [service], env=BUILD_ENV)
 
     exclude_services = set()
     all_services = run_command_with_output(
@@ -570,6 +702,27 @@ def _resolve_skip_keywords(args) -> set:
     return skip_keywords
 
 
+def _start_command(args, start_parser) -> None:
+    skip_keywords = _resolve_skip_keywords(args)
+    if not args.services_to_start:
+        start(skip_keywords, rebuild=args.rebuild)
+        return
+
+    valid_services = list_services()
+    invalid = [s for s in args.services_to_start if s not in valid_services]
+    if invalid:
+        start_parser.error(
+            "unknown service(s) for --services-to-start: "
+            f"{', '.join(invalid)}\n"
+            f"valid services: {', '.join(sorted(valid_services))}"
+        )
+    start(
+        skip_keywords,
+        services_to_start=args.services_to_start,
+        rebuild=args.rebuild,
+    )
+
+
 def list_services() -> List[str]:
     output = run_command_with_output(
         ["docker", "compose", "config", "--services"], hide_output=True
@@ -634,7 +787,17 @@ def main():
     start_parser.add_argument(
         "--rebuild",
         action="store_true",
-        help="Force a no-cache rebuild of the base image (same as NATLAB_BUILD_NO_CACHE=1)",
+        help="Force a no-cache local rebuild of the base image instead of pulling it (same as NATLAB_BUILD_NO_CACHE=1)",
+    )
+
+    publish_parser = subparsers.add_parser(
+        "publish-base",
+        help="Build the base image and push it to the registry unless it is already there",
+    )
+    publish_parser.add_argument(
+        "--push-docker-config",
+        metavar="DIR",
+        help="Docker config directory holding the registry login used for the push",
     )
 
     subparsers.add_parser("restart", help="Restart (already existing) containers")
@@ -660,23 +823,9 @@ def main():
         return
 
     if args.command == "start":
-        skip_keywords = _resolve_skip_keywords(args)
-        if args.services_to_start:
-            valid_services = list_services()
-            invalid = [s for s in args.services_to_start if s not in valid_services]
-            if invalid:
-                start_parser.error(
-                    "unknown service(s) for --services-to-start: "
-                    f"{', '.join(invalid)}\n"
-                    f"valid services: {', '.join(sorted(valid_services))}"
-                )
-            start(
-                skip_keywords,
-                services_to_start=args.services_to_start,
-                rebuild=args.rebuild,
-            )
-        else:
-            start(skip_keywords, rebuild=args.rebuild)
+        _start_command(args, start_parser)
+    elif args.command == "publish-base":
+        publish_base_image(args.push_docker_config)
     elif args.command == "restart":
         restart()
     elif args.command == "recreate":
