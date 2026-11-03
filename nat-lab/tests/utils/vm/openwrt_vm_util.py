@@ -103,7 +103,7 @@ class _OpkgPackageManager(_OpenwrtPackageManager):
 
     @property
     def pkg_name(self) -> str:
-        return f"nordvpnlite_0.1.0-r1_{self._cfg.cdn_arch}.ipk"
+        return f"nordvpnlite_0.2.0-r1_{self._cfg.cdn_arch}.ipk"
 
     async def _uninstall_existing(self) -> None:
         try:
@@ -150,7 +150,7 @@ class _ApkPackageManager(_OpenwrtPackageManager):
 
     @property
     def pkg_name(self) -> str:
-        return "nordvpnlite-0.1.0-r1.apk"
+        return "nordvpnlite-0.2.0-r1.apk"
 
     async def _uninstall_existing(self) -> None:
         try:
