@@ -235,8 +235,8 @@ class LibtelioProxy:
         self._handle_remote_error(lambda r: r.generate_stack_panic())
 
     @move_to_async_thread
-    def generate_error(self) -> None:
-        self._handle_remote_error(lambda r: r.generate_error())
+    def generate_error(self, from_async: bool) -> None:
+        self._handle_remote_error(lambda r: r.generate_error(from_async))
 
     @move_to_async_thread
     def flush_logs(self) -> None:
