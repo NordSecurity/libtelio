@@ -1143,8 +1143,17 @@ impl Telio {
     }
 
     /// For testing only.
-    pub fn generate_error(&self) -> FfiResult<()> {
-        catch_ffi_panic(foo)
+    pub fn generate_error(&self, from_async: bool) -> FfiResult<()> {
+        if from_async {
+            catch_ffi_panic(|| {
+                self.device_op(true, |dev| {
+                    dev.generate_async_backtrace()
+                        .map_err(TelioError::from_device)
+                })
+            })
+        } else {
+            catch_ffi_panic(foo)
+        }
     }
 }
 

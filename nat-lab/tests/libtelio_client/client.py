@@ -400,8 +400,8 @@ class Client:
     async def generate_stack_panic(self) -> None:
         await self.get_proxy().generate_stack_panic()
 
-    async def generate_error(self) -> None:
-        await self.get_proxy().generate_error()
+    async def generate_error(self, from_async: bool) -> None:
+        await self.get_proxy().generate_error(from_async)
 
     async def set_secret_key(self, secret_key: str):
         await self.get_proxy().set_secret_key(secret_key)
