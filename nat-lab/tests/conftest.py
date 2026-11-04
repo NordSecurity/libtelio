@@ -276,7 +276,9 @@ def pytest_runtest_teardown(item, nextitem):  # pylint: disable=unused-argument
 
     async def collect_logs_for(log_collector):
         try:
-            async with new_connection_raw(log_collector.tag) as connection:
+            async with new_connection_raw(
+                log_collector.tag, prepare=False
+            ) as connection:
                 await log_collector.cleanup(connection)
         except Exception as e:  # pylint: disable=broad-exception-caught
             log.warning(
