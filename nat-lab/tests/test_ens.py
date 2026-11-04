@@ -2,6 +2,7 @@ import asyncio
 import base64
 import pytest
 from contextlib import AsyncExitStack
+from natlab import ping
 from tests import config
 from tests.helpers import (
     SetupParameters,
@@ -36,7 +37,6 @@ from tests.utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_by_tag,
 )
-from tests.utils.ping import ping
 from tests.utils.router import IPProto, IPStack
 from typing import cast
 

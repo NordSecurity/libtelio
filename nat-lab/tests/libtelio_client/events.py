@@ -1,7 +1,7 @@
 import asyncio
+from natlab import asyncio_util, CommandGrepper
 from tests.config import DERP_SERVERS
 from tests.uniffi import VpnConnectionError
-from tests.utils import asyncio_util
 from tests.utils.bindings import (
     Cipher,
     ErrorEvent,
@@ -10,7 +10,6 @@ from tests.utils.bindings import (
     PathType,
     RelayState,
 )
-from tests.utils.command_grepper import CommandGrepper
 from tests.utils.connection import TargetOS
 from tests.utils.logger import log
 from typing import List, Optional, TYPE_CHECKING

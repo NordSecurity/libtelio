@@ -3,6 +3,7 @@ import pytest
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
 from datetime import datetime, timedelta
+from natlab import ping
 from tests import config
 from tests.helpers import SetupParameters, Environment, setup_environment
 from tests.libtelio_client import Client
@@ -15,7 +16,6 @@ from tests.utils.connection_util import (
     new_connection_by_tag,
 )
 from tests.utils.dns import query_dns
-from tests.utils.ping import ping
 from tests.utils.python import get_python_binary
 from tests.utils.router import IPStack
 

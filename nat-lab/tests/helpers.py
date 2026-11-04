@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from http import HTTPStatus
 from ipaddress import AddressValueError, IPv6Address
 from itertools import product, zip_longest
+from natlab import ping
 from tests.libtelio_client import Client
 from tests.mesh_api import Node, API
 from tests.utils.bindings import (
@@ -29,7 +30,6 @@ from tests.utils.connection_util import (
     new_connection_raw,
 )
 from tests.utils.logger import log
-from tests.utils.ping import ping
 from tests.utils.process import Process
 from tests.utils.router import IPStack
 from tests.utils.tcpdump import make_tcpdump

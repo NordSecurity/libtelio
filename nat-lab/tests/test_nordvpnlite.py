@@ -2,6 +2,7 @@ import asyncio
 import copy
 import pytest
 from contextlib import AsyncExitStack
+from natlab import ping
 from pathlib import Path
 from tests.config import NLX_SERVER, PHOTO_ALBUM_IP, STUN_SERVER, WG_SERVER, WG_SERVER_2
 from tests.helpers import setup_connections
@@ -19,7 +20,6 @@ from tests.utils import stun
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import new_connection_by_tag
 from tests.utils.logger import log
-from tests.utils.ping import ping
 from tests.utils.process.process import ProcessExecError
 
 

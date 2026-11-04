@@ -135,6 +135,23 @@ module = "tests.uniffi.telio_bindings"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
+# natlab is installed only in the service job, so a checkout without it still
+# type-checks; with NATLAB_DIR set, run_local puts its src on MYPYPATH and the
+# shared vocabulary types are checked for real - that is what catches a second
+# enum or exception class of the same shape
+module = ["natlab", "natlab.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# natlab's tools are typed against its own Connection ABC, which the connections here
+# are duck-compatible with but not subclasses of. Following them reports every call
+# site instead of the bug this guard is for: a second local class of the same shape as
+# one of natlab's vocabulary types, which the followed natlab.connection and
+# natlab.process do catch
+module = ["natlab.tools.*", "natlab.lab", "natlab.testing", "natlab.service"]
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
 module = "scapy.*"
 ignore_missing_imports = true
 # scapy populates scapy.all dynamically and ships imperfect type hints, so
@@ -150,8 +167,8 @@ ignore-paths = ".venv,tests/protobuf,bin/grpc_protobuf,tests/uniffi/telio_bindin
 
 [tool.pylint.typecheck]
 # scapy.all re-exports its protocol classes dynamically, so pylint can't see
-# names like TCP/UDP via static analysis.
-ignored-modules = ["scapy.all"]
+# names like TCP/UDP via static analysis. natlab is installed only in the service job.
+ignored-modules = ["scapy.all", "natlab"]
 
 [tool.pylint.design]
 # nat-lab test helpers/fixtures legitimately take many parameters (per-node
