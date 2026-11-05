@@ -117,7 +117,8 @@ if-addrs = "0.15.0"
 ipnet = { version = "2.12", features = ["serde"] }
 itertools = "0.15"
 lazy_static = "1.5"
-libc = "0.2"
+# later libc versions make several Apple items available only for macOS, which breaks `nix` compilation for iOS and tvOS
+libc = "=0.2.189"
 tracing = { version = "0.1", features = [
   "max_level_trace",
   "release_max_level_debug",
