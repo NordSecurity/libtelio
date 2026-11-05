@@ -1,4 +1,4 @@
-use crate::endpoint_providers::Error;
+use crate::endpoint_providers::{Error, ErrorVariant};
 use rand::rngs::StdRng;
 use std::{
     collections::{HashMap, HashSet},
@@ -112,7 +112,7 @@ impl PingPongHandler {
                 );
                 let pong = packet
                     .pong(wg_port, &addr.ip(), endpoint_provider)
-                    .ok_or(Error::FailedToBuildPongPacket)?;
+                    .ok_or(ErrorVariant::FailedToBuildPongPacket)?;
                 let mut rng = self.rng.lock().await;
                 let encrypt_transform = |b: &[u8]| {
                     encrypt_response(b, &mut *rng, &self.secret_key, &remote_pk)

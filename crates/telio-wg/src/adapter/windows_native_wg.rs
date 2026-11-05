@@ -1,4 +1,7 @@
-use super::{Adapter, Error as AdapterError, IsMeshnetEnabledCb, Tun as NativeTun};
+use super::{
+    Adapter, Error as AdapterError, ErrorVariant as AdapterErrorVariant, IsMeshnetEnabledCb,
+    Tun as NativeTun,
+};
 use crate::{
     uapi::{Cmd, Cmd::Get, Cmd::Set, Interface, Peer, Response},
     windows::{
@@ -283,12 +286,12 @@ impl WindowsNativeWg {
                 )));
                 if let Ok(mut watcher) = watcher.lock() {
                     if let Err(monitoring_err) = watcher.start_monitoring() {
-                        return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+                        return Err(AdapterError::from(Error::Fail(format!(
                             "Failed to start watcher with err {monitoring_err}",
                         ))));
                     }
                 } else {
-                    return Err(AdapterError::WindowsNativeWg(Error::Fail(
+                    return Err(AdapterError::from(Error::Fail(
                         "error obtaining lock".into(),
                     )));
                 }
@@ -319,17 +322,17 @@ impl WindowsNativeWg {
                             watcher.configure(wgnt.adapter.clone(), luid);
                             Ok(wgnt)
                         } else {
-                            Err(AdapterError::WindowsNativeWg(Error::Fail(
+                            Err(AdapterError::from(Error::Fail(
                                 "error obtaining lock".into(),
                             )))
                         }
                     }
-                    Err(e) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+                    Err(e) => Err(AdapterError::from(Error::Fail(format!(
                         "Failed to create adapter: {e:?}",
                     )))),
                 }
             }
-            Err(e) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+            Err(e) => Err(AdapterError::from(Error::Fail(format!(
                 "Failed to load wireguard dll: {e:?}",
             )))),
         }
@@ -624,7 +627,7 @@ impl WindowsNativeWg {
             enable_dynamic_wg_nt_control.is_some()
         );
         if !service::wait_for_service("WireGuard", service::DEFAULT_SERVICE_WAIT_TIMEOUT) {
-            return Err(AdapterError::WindowsNativeWg(Error::Fail(
+            return Err(AdapterError::from(Error::Fail(
                 "WireGuard service not running".to_string(),
             )));
         }
@@ -633,7 +636,7 @@ impl WindowsNativeWg {
             .set_logging(wireguard_nt::AdapterLoggingLevel::OnWithPrefix)
         {
             let os_error = IOError::last_os_error();
-            return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+            return Err(AdapterError::from(Error::Fail(format!(
                 "Failed to set logging for adapter, last error: {os_error:?}",
             ))));
         }
@@ -645,7 +648,7 @@ impl WindowsNativeWg {
         .await
         {
             // TODO: Should we fail here if adapter interface is not ready?
-            return Err(AdapterError::WindowsNativeWg(Error::Fail(
+            return Err(AdapterError::from(Error::Fail(
                 "Adapter interface not ready".to_string(),
             )));
         }
@@ -768,7 +771,7 @@ impl WindowsNativeWg {
         telio_log_error!(
             "Failed to set adapter state for {SET_STATE_MAX_ATTEMPTS} times. Giving up!"
         );
-        Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+        Err(AdapterError::from(Error::Fail(format!(
             "Failed to set adapter's state to {want_adapter_state:?}, last error: {:?}",
             IOError::from_raw_os_error(os_error_code.load(Ordering::Relaxed))
         ))))
@@ -870,7 +873,7 @@ impl WindowsNativeWg {
                                 "Failed to restore forced MTU {previous:?}: {restore_err}"
                             );
                         }
-                        return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+                        return Err(AdapterError::from(Error::Fail(format!(
                             "Failed to set adapter MTU {mtu}, last error: {err}",
                         ))));
                     }
@@ -886,7 +889,7 @@ impl WindowsNativeWg {
     fn set_forced_mtu(&self, mtu: Option<u32>) -> std::result::Result<Option<u32>, AdapterError> {
         match self.watcher.clone().lock() {
             Ok(mut interface_watcher) => Ok(interface_watcher.set_forced_mtu(mtu)),
-            Err(_) => Err(AdapterError::WindowsNativeWg(Error::Fail(
+            Err(_) => Err(AdapterError::from(Error::Fail(
                 "error obtaining lock".into(),
             ))),
         }
@@ -958,7 +961,7 @@ impl Adapter for WindowsNativeWg {
     }
 
     async fn set_tun(&self, _tun: super::Tun) -> std::result::Result<(), AdapterError> {
-        Err(AdapterError::UnsupportedAdapter)
+        Err(AdapterErrorVariant::UnsupportedAdapter.into())
     }
 
     async fn set_adapter_mtu(&self, mtu: Option<u32>) -> std::result::Result<(), AdapterError> {

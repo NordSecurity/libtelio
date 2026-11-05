@@ -61,6 +61,7 @@ pub enum Error {
     SocketSendError,
     /// Failed to send packet over channel
     #[error("Failed to send packet over channel")]
+    #[cfg(debug_assertions)]
     ChannelSendError,
     /// Failed to nat packet
     #[error(transparent)]

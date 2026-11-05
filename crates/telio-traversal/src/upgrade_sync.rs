@@ -16,9 +16,9 @@ use crate::cross_ping_check::UpgradeController;
 
 const MAX_PENDING_SESSIONS: usize = 512;
 
-/// Possible [UpgradeSync] errors.
+/// Kind of the [UpgradeSync] error
 #[derive(thiserror::Error, Debug)]
-pub enum Error {
+pub enum ErrorVariant {
     /// Channel error
     #[error(transparent)]
     SendUpgradeMsgErr(#[from] SendError<(PublicKey, UpgradeMsg)>),
@@ -34,6 +34,11 @@ pub enum Error {
     Rejected(telio_proto::Decision),
     #[error("Upgrade request not found or expired")]
     NotFound,
+}
+
+telio_utils::traced_error! {
+    /// Possible [UpgradeSync] errors, carries the backtrace of the place where it was created
+    pub struct Error(ErrorVariant);
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -180,7 +185,7 @@ impl UpgradeSyncTrait for UpgradeSync {
             )
         })
         .await
-        .map_err(Error::Task)
+        .map_err(Error::from)
     }
 
     async fn get_accepted_session(&self, public_key: PublicKey) -> Option<SessionData> {
@@ -243,7 +248,7 @@ impl State {
                 },
             ))
             .await
-            .map_err(Error::SendUpgradeMsgErr)?;
+            .map_err(ErrorVariant::SendUpgradeMsgErr)?;
 
         // Insert endpoint to local end to force our side to keep the endpoint too
 
@@ -323,10 +328,10 @@ impl State {
                         },
                     ))
                     .await
-                    .map_err(Error::SendUpgradeDecisionMsgErr)?;
+                    .map_err(ErrorVariant::SendUpgradeDecisionMsgErr)?;
 
                 if decision != telio_proto::Decision::Accepted {
-                    return Err(Error::Rejected(decision));
+                    return Err(ErrorVariant::Rejected(decision).into());
                 }
 
                 self.accepted_direct_sessions.insert(
@@ -358,8 +363,8 @@ impl State {
                         },
                     ))
                     .await
-                    .map_err(Error::SendUpgradeDecisionMsgErr)?;
-                return Err(Error::Rejected(decision));
+                    .map_err(ErrorVariant::SendUpgradeDecisionMsgErr)?;
+                return Err(ErrorVariant::Rejected(decision).into());
             }
             Err(e) => {
                 telio_log_warn!(
@@ -379,8 +384,8 @@ impl State {
                         },
                     ))
                     .await
-                    .map_err(Error::SendUpgradeDecisionMsgErr)?;
-                return Err(Error::Rejected(decision));
+                    .map_err(ErrorVariant::SendUpgradeDecisionMsgErr)?;
+                return Err(ErrorVariant::Rejected(decision).into());
             }
         }
 
@@ -402,7 +407,7 @@ impl State {
         self.upgrade_request_publisher
             .send(upgrade_req_event)
             .await
-            .map_err(Error::SendUpgradeRequestChangeEventErr)?;
+            .map_err(ErrorVariant::SendUpgradeRequestChangeEventErr)?;
 
         Ok(())
     }
@@ -423,7 +428,7 @@ impl State {
             self.upgrade_request_publisher
                 .send(UpgradeRequestChangeEvent {})
                 .await
-                .map_err(Error::SendUpgradeRequestChangeEventErr)?;
+                .map_err(ErrorVariant::SendUpgradeRequestChangeEventErr)?;
         }
 
         // Remove all expired events from our state

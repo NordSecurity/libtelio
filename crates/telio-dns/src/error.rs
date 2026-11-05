@@ -1,5 +1,5 @@
 use crate::zone::NordZoneError;
-use std::{io, net::AddrParseError};
+use std::io;
 use thiserror::Error;
 
 /// Result type used by the telio-dns crate
@@ -51,7 +51,7 @@ pub enum ForwardError {
 /// that can occur when configuring or running the DNS resolver
 #[derive(Debug, Error)]
 #[non_exhaustive]
-pub enum Error {
+pub enum ErrorVariant {
     /// An IO error during DNS socket or tunnel operations
     #[error(transparent)]
     Io(#[from] DnsIoError),
@@ -70,7 +70,8 @@ pub enum Error {
 
     /// Invalid IP address
     #[error("Invalid IP address: {0}")]
-    AddressParse(#[from] AddrParseError),
+    #[cfg(debug_assertions)]
+    AddressParse(#[from] std::net::AddrParseError),
 
     /// Failed to create the raw DNS forwarder
     #[error("Failed to create DNS forwarder: {0}")]
@@ -83,6 +84,11 @@ pub enum Error {
     /// Nameserver is stopped
     #[error("Nameserver stopped")]
     Stopped,
+}
+
+telio_utils::traced_error! {
+    /// Error of the telio-dns crate, carries the backtrace of the place where it was created
+    pub struct Error(ErrorVariant);
 }
 
 #[cfg(test)]
@@ -106,7 +112,7 @@ mod tests {
     fn error_io_from_dns_io_error() {
         let io_err = DnsIoError::GetSocketAddr(fake_io_error("no address"));
         let err = Error::from(io_err);
-        assert!(matches!(err, Error::Io(_)));
+        assert!(matches!(err.variant(), ErrorVariant::Io(_)));
         // transparent display should show inner DnsIoError message
         assert_eq!(
             err.to_string(),

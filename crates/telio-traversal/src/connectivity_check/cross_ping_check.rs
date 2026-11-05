@@ -1,9 +1,9 @@
-use super::{Error, WireGuardEndpointCandidateChangeEvent};
+use super::{Error, ErrorVariant, WireGuardEndpointCandidateChangeEvent};
 use crate::{
     do_state_transition,
     endpoint_providers::{
         EndpointCandidate, EndpointCandidatesChangeEvent, EndpointProvider, EndpointProviderType,
-        Error as EndPointError, PongEvent,
+        Error as EndPointError, ErrorVariant as EndPointErrorVariant, PongEvent,
     },
     endpoint_state::{EndpointState, EndpointStateMachine, Event},
     last_rx_time_provider::{TimeSinceLastRxProvider, is_peer_alive},
@@ -330,7 +330,7 @@ impl<E: Backoff> State<E> {
     ) -> Result<&'a mut EndpointConnectivityCheckState<E>, Error> {
         ep_connectivity_state
             .get_mut(session_id)
-            .ok_or(Error::UnkownSessionForRxedPongPacket)
+            .ok_or_else(|| ErrorVariant::UnkownSessionForRxedPongPacket.into())
     }
 
     fn gather_all_local_endpoints(&self) -> Result<HashSet<EndpointCandidate>, Error> {
@@ -482,7 +482,8 @@ impl<E: Backoff> State<E> {
             .local_endpoint_cache
             .as_mut_array()
             .get_mut(provider as usize)
-            .ok_or(Error::EndpointProviderError(EndPointError::LocalCacheError))?) = new_endpoints;
+            .ok_or_else(|| EndPointError::from(EndPointErrorVariant::LocalCacheError))?) =
+            new_endpoints;
 
         Ok(())
     }
@@ -511,7 +512,7 @@ impl<E: Backoff> State<E> {
                     .iter()
                     .map(|(k, v)| (v.public_key, *k))
                     .find(|(pk, _)| *pk == public_key)
-                    .ok_or(Error::UnexpectedPeer(public_key))?;
+                    .ok_or(ErrorVariant::UnexpectedPeer(public_key))?;
 
                 for endpoint in endpoints {
                     Self::send_ping_via_all_endpoint_providers(
@@ -1506,7 +1507,7 @@ mod tests {
         let mut endpoint_provider_mock_1 = MockEndpointProvider::new();
         endpoint_provider_mock_1
             .expect_send_ping()
-            .returning(|_, _, _| Err(endpoint_providers::Error::NoWGListenPort));
+            .returning(|_, _, _| Err(endpoint_providers::ErrorVariant::NoWGListenPort.into()));
 
         let mut endpoint_provider_mock_2 = MockEndpointProvider::new();
         endpoint_provider_mock_2
@@ -1554,7 +1555,7 @@ mod tests {
             .times(1)
             .returning(move |_| match which_error {
                 0 => Err(last_rx_time_provider::Error::UnableToCommunicateWithWG(
-                    telio_wg::Error::UnsupportedOperationError,
+                    telio_wg::ErrorVariant::UnsupportedOperationError.into(),
                 )),
                 1 => Ok(None),
 

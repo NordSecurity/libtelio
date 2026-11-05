@@ -1436,6 +1436,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
+name = "findshlibs"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "40b9e59cd0f7e0806cca4be089683ecb6434e602038df21fe6bf6711b2f07f64"
+dependencies = [
+ "cc",
+ "lazy_static",
+ "libc",
+ "winapi",
+]
+
+[[package]]
 name = "fixedbitset"
 version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5053,7 +5065,6 @@ dependencies = [
  "sn_fake_clock",
  "telio-crypto",
  "telio-model",
- "telio-proto",
  "telio-sockets",
  "telio-task",
  "telio-test",
@@ -5127,6 +5138,7 @@ dependencies = [
  "backtrace",
  "blake3",
  "boot-time",
+ "findshlibs",
  "futures",
  "hashlink",
  "ipnet",
@@ -5147,6 +5159,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "uuid",
  "zeroize",
 ]
 

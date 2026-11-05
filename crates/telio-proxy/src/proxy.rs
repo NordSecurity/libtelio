@@ -19,7 +19,7 @@ use telio_task::{
     },
     task_exec, Runtime, RuntimeExt, Task, WaitResponse,
 };
-use tokio::{net::UdpSocket, sync::mpsc::error::SendTimeoutError};
+use tokio::net::UdpSocket;
 
 use telio_utils::{
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
@@ -32,10 +32,11 @@ type SocketMuteMap = HashMap<PublicKey, (Arc<UdpSocket>, Option<PinnedSleep<Publ
 const SOCK_BUF_SZ: usize = 212992;
 
 #[derive(Debug, thiserror::Error)]
-/// Custom `UdpProxy` error
-pub enum Error {
+/// Kind of the `UdpProxy` error
+pub enum ErrorVariant {
     #[error("UdpProxy Stopped")]
     /// `UdpProxy` Stopped Error
+    #[cfg(debug_assertions)]
     Stopped,
     #[error("UdpProxy IoError")]
     /// `UdpProxy` `IoError`
@@ -45,10 +46,16 @@ pub enum Error {
     Task(#[from] telio_task::ExecError),
     /// Send failed
     #[error(transparent)]
-    Send(#[from] SendTimeoutError<(PublicKey, DataMsg)>),
+    #[cfg(debug_assertions)]
+    Send(#[from] tokio::sync::mpsc::error::SendTimeoutError<(PublicKey, DataMsg)>),
     /// Peer not found
     #[error("Peer not found error")]
     PeerNotFound,
+}
+
+telio_utils::traced_error! {
+    /// Custom `UdpProxy` error, carries the backtrace of the place where it was created
+    pub struct Error(ErrorVariant);
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -308,7 +315,7 @@ impl StateEgress {
 
     fn try_mute(&mut self, pk: &PublicKey, dur: Duration) -> Result<(), Error> {
         let Some((_, mute)) = self.sockets.get_mut(pk) else {
-            return Err(Error::PeerNotFound);
+            return Err(ErrorVariant::PeerNotFound.into());
         };
         telio_log_debug!("Muting peer: {:?} for {:?}", pk, dur);
         *mute = Some(PinnedSleep::new(dur, *pk));
@@ -318,7 +325,7 @@ impl StateEgress {
 
     fn try_unmute(&mut self, pk: &PublicKey) -> Result<(), Error> {
         let Some((_, mute)) = self.sockets.get_mut(pk) else {
-            return Err(Error::PeerNotFound);
+            return Err(ErrorVariant::PeerNotFound.into());
         };
         telio_log_debug!("Unmuting peer: {:?}", pk);
         *mute = None;

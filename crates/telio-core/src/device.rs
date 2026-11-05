@@ -124,7 +124,7 @@ use crate::{
 use telio_model::cipher::Cipher;
 
 #[derive(Debug, TError)]
-pub enum Error {
+pub enum ErrorVariant {
     #[error("Driver already started.")]
     AlreadyStarted,
     #[error("Driver not started.")]
@@ -142,6 +142,7 @@ pub enum Error {
     #[error("Configured exit node is not a meshnet node and does not have an endpoint set")]
     EndpointNotProvided,
     #[error("Deleting non-existent node")]
+    #[cfg(debug_assertions)]
     InvalidDelete,
     #[error("Meshnet IP is not set for the node")]
     NoMeshnetIP,
@@ -150,16 +151,20 @@ pub enum Error {
     #[error("Failed to build async runtime {0}")]
     AsyncRuntime(#[from] IoError),
     #[error("Failed to set fwmark for WG socket")]
+    #[cfg(debug_assertions)]
     WgFwmark,
     #[error("DNS resolver error: {0}")]
     DnsResolverError(#[from] telio_dns::error::Error),
     #[error("DNS module should be disabled when executing this operation")]
     DnsNotDisabled,
     #[error("Failed to reconnect to DERP server")]
+    #[cfg(debug_assertions)]
     FailedToReconnect,
     #[error("Failed to recover information about NAT")]
+    #[cfg(debug_assertions)]
     FailedNatInfoRecover(std::io::Error),
     #[error("Failed to initialize libmoose: {0}")]
+    #[cfg(debug_assertions)]
     LibmooseError(#[from] telio_lana::moose::Error),
     #[error("Failed to parse IP network")]
     IpNetworkError(#[from] ipnet::AddrParseError),
@@ -173,8 +178,6 @@ pub enum Error {
     EndpointProviderError(#[from] endpoint_providers::Error),
     #[error("Multiplexer error")]
     MultiplexerError(#[from] telio_relay::multiplexer::Error),
-    #[error("Traversal error")]
-    TraversalError(#[from] telio_traversal::Error),
     #[error("Task execution error")]
     TaskExecError(#[from] telio_task::ExecError),
     #[error("Session keeper error: {0}")]
@@ -183,12 +186,14 @@ pub enum Error {
     UpgradeSyncError(#[from] telio_traversal::upgrade_sync::Error),
     #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
     #[error("Socket pool error")]
+    #[cfg(debug_assertions)]
     SocketPoolError(#[from] telio_sockets::protector::platform::Error),
     #[error(transparent)]
     PostQuantum(#[from] telio_pq::Error),
     #[error("Cannot setup meshnet when the post quantum VPN is set up")]
     MeshnetUnavailableWithPQ,
     #[error("Connection upgrade failed - there is no session for key {0:?}")]
+    #[cfg(debug_assertions)]
     NoSessionForKey(PublicKey),
     #[error("Pinger receive timeout")]
     PingerReceiveTimeout,
@@ -210,11 +215,28 @@ pub enum Error {
     #[error("Firewall init error: {0:?}")]
     FirewallError(#[from] telio_firewall::firewall::Error),
     #[error("Firewall loading error {0}")]
+    #[cfg(debug_assertions)]
     FirewallLoadingError(#[from] libloading::Error),
     #[error("FirewallDisabled")]
     FirewallDisabled,
     #[error("FirewallUnsupported")]
     FirewallUnsupported,
+}
+
+telio_utils::traced_error! {
+    /// Device error, carries the backtrace of the place where it was created
+    pub struct Error(ErrorVariant);
+    reuse_backtrace {
+        ErrorVariant::Adapter(e) => e,
+        ErrorVariant::DnsResolverError(e) => e,
+        ErrorVariant::PostQuantum(e) => e,
+        ErrorVariant::ProxyError(e) => e,
+        ErrorVariant::EndpointProviderError(e) => e,
+        ErrorVariant::ConnectivityCheckError(e) => e,
+        ErrorVariant::SessionKeeperError(e) => e,
+        ErrorVariant::UpgradeSyncError(e) => e,
+        ErrorVariant::ExponentialBackoffError(e) => e,
+    }
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -595,7 +617,7 @@ impl Device {
             });
         if let Err(e) = handle {
             telio_log_error!("Failed to start events thread: {e:?}");
-            return Err(Error::EventsProcessingThreadStartError(e));
+            return Err(ErrorVariant::EventsProcessingThreadStartError(e).into());
         }
 
         Ok(Device {
@@ -619,7 +641,7 @@ impl Device {
 
     pub fn start(&mut self, config: DeviceConfig) -> Result {
         if self.is_running() {
-            return Err(Error::AlreadyStarted);
+            return Err(ErrorVariant::AlreadyStarted.into());
         }
 
         self.rt = Some(self.async_runtime()?.block_on(async {
@@ -685,7 +707,7 @@ impl Device {
                 art.shutdown_timeout(timeout);
                 Ok(())
             }
-            None => Err(Error::NotStarted),
+            None => Err(ErrorVariant::NotStarted.into()),
         }
     }
 
@@ -916,13 +938,15 @@ impl Device {
     }
 
     fn rt(&self) -> Result<&Task<Runtime>> {
-        self.rt.as_ref().ok_or(Error::NotStarted)
+        self.rt
+            .as_ref()
+            .ok_or_else(|| ErrorVariant::NotStarted.into())
     }
 
     fn async_runtime(&self) -> Result<&AsyncRuntime> {
         match self.async_runtime.as_ref() {
             Some(art) => Ok(art),
-            None => Err(Error::NotStarted),
+            None => Err(ErrorVariant::NotStarted.into()),
         }
     }
 
@@ -1549,7 +1573,7 @@ impl Runtime {
             )));
             let mut endpoint_providers: Vec<Arc<dyn EndpointProvider>> = Vec::new();
             if direct.endpoint_interval_secs == 0 {
-                return Err(Error::PollingPeriodZero);
+                return Err(ErrorVariant::PollingPeriodZero.into());
             }
             // Create Local Interface Endpoint Provider
             let local_interfaces_endpoint_provider = if has_provider(Local) {
@@ -1727,13 +1751,13 @@ impl Runtime {
             .requested_state
             .meshnet_config
             .as_ref()
-            .ok_or(Error::MeshnetNotConfigured)?
+            .ok_or(ErrorVariant::MeshnetNotConfigured)?
             .this
             .ip_addresses
             .as_ref()
-            .ok_or(Error::NoMeshnetIP)?
+            .ok_or(ErrorVariant::NoMeshnetIP)?
             .first()
-            .ok_or(Error::NoMeshnetIP)?;
+            .ok_or(ErrorVariant::NoMeshnetIP)?;
         let transport = Arc::new(
             Transport::start(
                 meshnet_ip.to_owned(),
@@ -1793,11 +1817,11 @@ impl Runtime {
         let meshnet_is_on = self.requested_state.meshnet_config.is_some();
         let key_is_the_different = self.get_private_key().await? != *private_key;
         if should_validate_keys && meshnet_is_on && key_is_the_different {
-            return Err(Error::BadPublicKey);
+            return Err(ErrorVariant::BadPublicKey.into());
         }
 
         if self.entities.dns.lock().await.resolver.is_some() {
-            return Err(Error::DnsNotDisabled);
+            return Err(ErrorVariant::DnsNotDisabled.into());
         }
 
         if let Some(m_entities) = self.entities.meshnet.left() {
@@ -1941,14 +1965,14 @@ impl Runtime {
             let public_key = itf
                 .private_key
                 .ok_or_else(|| {
-                    Error::AdapterConfig("Adapter does not have a private key".to_owned())
+                    ErrorVariant::AdapterConfig("Adapter does not have a private key".to_owned())
                 })?
                 .public();
 
             if let Some(dns) = &dns_entity.resolver {
                 dns.forward(upstream_dns_servers)
                     .await
-                    .map_err(Error::DnsResolverError)?;
+                    .map_err(ErrorVariant::DnsResolverError)?;
             } else {
                 telio_log_debug!(
                     "enabling magic dns with forward servers: {:?}",
@@ -1962,7 +1986,7 @@ impl Runtime {
                     &self.features.dns,
                 )
                 .await
-                .map_err(Error::DnsResolverError)?;
+                .map_err(ErrorVariant::DnsResolverError)?;
                 dns.start().await;
                 dns_entity.resolver = Some(dns);
             }
@@ -1982,7 +2006,7 @@ impl Runtime {
             telio_log_debug!("forwarding to dns {:?}", forward_ips);
             dns.forward(forward_ips)
                 .await
-                .map_err(Error::DnsResolverError)?;
+                .map_err(ErrorVariant::DnsResolverError)?;
         }
 
         Ok(())
@@ -2003,7 +2027,7 @@ impl Runtime {
     async fn set_config(&mut self, config: &Option<Config>) -> Result {
         if self.entities.postquantum_wg.is_rotating_keys() && config.is_some() {
             // Post quantum VPN is enabled and we're trying to set up the meshnet
-            return Err(Error::MeshnetUnavailableWithPQ);
+            return Err(ErrorVariant::MeshnetUnavailableWithPQ.into());
         }
 
         if let Some(cfg) = config {
@@ -2011,7 +2035,7 @@ impl Runtime {
             let keys_match =
                 cfg.this.public_key == self.get_private_key().await.map(|key| key.public())?;
             if should_validate_keys && !keys_match {
-                return Err(Error::BadPublicKey);
+                return Err(ErrorVariant::BadPublicKey.into());
             }
         }
 
@@ -2023,7 +2047,7 @@ impl Runtime {
         let secret_key = if let Some(secret_key) = wg_itf.private_key {
             secret_key
         } else {
-            return Err(Error::BadPrivateKey);
+            return Err(ErrorVariant::BadPrivateKey.into());
         };
         let peers: HashSet<PublicKey> = config
             .clone()
@@ -2264,11 +2288,11 @@ impl Runtime {
         match &self.entities.firewall {
             Some(fw) => fw
                 .enable_tp_lite_stats_collection(config, collect_stats_cb)
-                .map_err(Error::FirewallError),
-            None => Err(Error::FirewallDisabled),
+                .map_err(Error::from),
+            None => Err(ErrorVariant::FirewallDisabled.into()),
         }
         #[cfg(not(feature = "enable_firewall"))]
-        Err(Error::FirewallUnsupported)
+        Err(ErrorVariant::FirewallUnsupported.into())
     }
 
     /// Disable collection of TP-Lite stats
@@ -2281,7 +2305,7 @@ impl Runtime {
             Ok(())
         }
         #[cfg(not(feature = "enable_firewall"))]
-        Err(Error::FirewallUnsupported)
+        Err(ErrorVariant::FirewallUnsupported.into())
     }
 
     /// Set the TP-Lite DNS whitelisting configuration at runtime: the whitelisted
@@ -2311,17 +2335,17 @@ impl Runtime {
                 }
                 Ok(())
             }
-            None => Err(Error::FirewallDisabled),
+            None => Err(ErrorVariant::FirewallDisabled.into()),
         }
         #[cfg(not(feature = "enable_firewall"))]
-        Err(Error::FirewallUnsupported)
+        Err(ErrorVariant::FirewallUnsupported.into())
     }
 
     /// Connect to exit node with post-quantum tunnel
     async fn connect_exit_node_pq(&mut self, config: ConnectionConfig) -> Result {
         if self.requested_state.meshnet_config.is_some() {
             // Meshnet is enabled and we're trying to set up the QP VPN connection
-            return Err(Error::MeshnetUnavailableWithPQ);
+            return Err(ErrorVariant::MeshnetUnavailableWithPQ.into());
         }
 
         // Stop post quantum key rotation task if it's running
@@ -2330,7 +2354,7 @@ impl Runtime {
         self.entities
             .postquantum_wg
             .start(
-                config.endpoint.ok_or(Error::EndpointNotProvided)?,
+                config.endpoint.ok_or(ErrorVariant::EndpointNotProvided)?,
                 self.requested_state.device_config.private_key.clone(),
                 config.public_key,
                 config.pq_upgrader_ip,
@@ -2392,7 +2416,7 @@ impl Runtime {
             let vpn_ip = match exit_node.endpoint {
                 Some(ep) => ep.ip(),
                 None => {
-                    return Err(Error::EndpointNotProvided);
+                    return Err(ErrorVariant::EndpointNotProvided.into());
                 }
             };
 
@@ -2439,7 +2463,7 @@ impl Runtime {
             Some(exit_node) if &exit_node.public_key == node_key => {
                 self.disconnect_exit_nodes().boxed().await
             }
-            _ => Err(Error::InvalidNode),
+            _ => Err(ErrorVariant::InvalidNode.into()),
         }
     }
 
@@ -2593,7 +2617,7 @@ impl Runtime {
             let _ = ch.send(());
             Ok(())
         } else {
-            Err(Error::NotStarted)
+            Err(ErrorVariant::NotStarted.into())
         }
     }
 
@@ -2602,7 +2626,7 @@ impl Runtime {
             let _ = ch.send(());
             Ok(())
         } else {
-            Err(Error::NotStarted)
+            Err(ErrorVariant::NotStarted.into())
         }
     }
 
@@ -2629,13 +2653,13 @@ impl Runtime {
                             },
                             other => {
                                 telio_log_warn!("Unexpected packet: {:?}", other);
-                                Err(Error::PingerReceiveUnexpected)
+                                Err(ErrorVariant::PingerReceiveUnexpected.into())
                             },
                         }
                     },
                     () = &mut sleep => {
                         telio_log_warn!("timeout");
-                        Err(Error::PingerReceiveTimeout)
+                        Err(ErrorVariant::PingerReceiveTimeout.into())
                     },
                 }
             }
@@ -3114,6 +3138,78 @@ mod tests {
             peers,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn device_error_keeps_backtrace_of_wrapped_errors() {
+        fn assert_kept(inner_backtrace: Arc<telio_utils::backtrace::Backtrace>, err: Error) {
+            assert!(Arc::ptr_eq(&inner_backtrace, &err.backtrace()));
+        }
+
+        let wg = AdapterError::from(wg::ErrorVariant::UnsupportedAdapter);
+        assert_kept(wg.backtrace(), wg.into());
+
+        let uapi =
+            wg::uapi::Error::from(wg::uapi::ErrorVariant::ParsingError("cmd", String::new()));
+        assert_kept(uapi.backtrace(), AdapterError::from(uapi).into());
+
+        let wg = AdapterError::from(wg::ErrorVariant::UnsupportedAdapter);
+        assert_kept(wg.backtrace(), endpoint_providers::Error::from(wg).into());
+
+        let wg = AdapterError::from(wg::ErrorVariant::UnsupportedAdapter);
+        assert_kept(
+            wg.backtrace(),
+            connectivity_check::Error::from(endpoint_providers::Error::from(wg)).into(),
+        );
+
+        let endpoint_provider =
+            endpoint_providers::Error::from(endpoint_providers::ErrorVariant::NoStunPeer);
+        assert_kept(endpoint_provider.backtrace(), endpoint_provider.into());
+
+        let connectivity_check = connectivity_check::Error::from(
+            connectivity_check::ErrorVariant::UnkownSessionForRxedPongPacket,
+        );
+        assert_kept(connectivity_check.backtrace(), connectivity_check.into());
+
+        let session_keeper = telio_traversal::session_keeper::Error::from(
+            telio_traversal::session_keeper::ErrorVariant::Task(telio_task::ExecError),
+        );
+        assert_kept(session_keeper.backtrace(), session_keeper.into());
+
+        let upgrade_sync = telio_traversal::upgrade_sync::Error::from(
+            telio_traversal::upgrade_sync::ErrorVariant::NotFound,
+        );
+        assert_kept(upgrade_sync.backtrace(), upgrade_sync.into());
+
+        let dns = telio_dns::error::Error::from(telio_dns::error::ErrorVariant::Stopped);
+        assert_kept(dns.backtrace(), dns.into());
+
+        let pq = telio_pq::Error::from("failed");
+        assert_kept(pq.backtrace(), pq.into());
+
+        let proxy = telio_proxy::Error::from(telio_proxy::ErrorVariant::PeerNotFound);
+        assert_kept(proxy.backtrace(), proxy.into());
+
+        let invalid_bounds = || {
+            exponential_backoff::Error::from(
+                exponential_backoff::ErrorVariant::InvalidExponentialBackoffBounds,
+            )
+        };
+
+        let backoff = invalid_bounds();
+        assert_kept(backoff.backtrace(), backoff.into());
+
+        let backoff = invalid_bounds();
+        assert_kept(
+            backoff.backtrace(),
+            endpoint_providers::Error::from(backoff).into(),
+        );
+
+        let backoff = invalid_bounds();
+        assert_kept(
+            backoff.backtrace(),
+            connectivity_check::Error::from(backoff).into(),
+        );
     }
 
     #[test]
@@ -3937,8 +4033,8 @@ mod tests {
 
         assert!(rt.set_config(&valid_cfg).await.is_ok());
         assert!(matches!(
-            rt.set_config(&invalid_cfg).await.unwrap_err(),
-            Error::BadPublicKey
+            rt.set_config(&invalid_cfg).await.unwrap_err().variant(),
+            ErrorVariant::BadPublicKey
         ));
     }
 
@@ -4097,8 +4193,11 @@ mod tests {
             .await;
         rt.set_config(&config).await.unwrap();
         assert!(matches!(
-            rt.set_private_key(&SecretKey::gen()).await.unwrap_err(),
-            Error::BadPublicKey
+            rt.set_private_key(&SecretKey::gen())
+                .await
+                .unwrap_err()
+                .variant(),
+            ErrorVariant::BadPublicKey
         ));
     }
 
