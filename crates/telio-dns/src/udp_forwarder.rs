@@ -468,11 +468,11 @@ pub(crate) mod tests {
     use super::*;
     use crate::{
         nameserver::QUERY_TIMEOUT,
-        tcp_fallback::tests::{frame, spawn_tcp_stub, TcpStubBehavior},
+        tcp_fallback::tests::{frame, read_frame, spawn_tcp_stub, TcpStubBehavior},
     };
     use std::net::Ipv4Addr;
     use telio_model::constants::DNS_PORT;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::io::AsyncWriteExt;
     use tokio::net::TcpListener;
     use tokio::task::JoinHandle;
 
@@ -572,10 +572,7 @@ pub(crate) mod tests {
             for _ in 0..count {
                 let (mut stream, _) = listener.accept().await.unwrap();
                 tokio::spawn(async move {
-                    let mut prefix = [0u8; 2];
-                    stream.read_exact(&mut prefix).await.unwrap();
-                    let mut query = vec![0u8; usize::from(u16::from_be_bytes(prefix))];
-                    stream.read_exact(&mut query).await.unwrap();
+                    let query = read_frame(&mut stream).await;
                     stream.write_all(&frame(&query)).await.unwrap();
                 });
             }

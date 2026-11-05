@@ -103,13 +103,25 @@ pub(crate) mod tests {
         },
     };
     use std::time::Duration;
-    use tokio::{net::TcpListener, task::JoinHandle};
+    use tokio::{
+        net::{TcpListener, TcpStream},
+        task::JoinHandle,
+    };
 
     /// Build one length prefixed DNS over TCP frame around `body`
     pub(crate) fn frame(body: &[u8]) -> Vec<u8> {
         let mut out = u16::try_from(body.len()).unwrap().to_be_bytes().to_vec();
         out.extend_from_slice(body);
         out
+    }
+
+    /// Read one length prefixed DNS over TCP frame, return its body
+    pub(crate) async fn read_frame(stream: &mut TcpStream) -> Vec<u8> {
+        let mut prefix = [0u8; TCP_LEN_PREFIX];
+        stream.read_exact(&mut prefix).await.unwrap();
+        let mut body = vec![0u8; usize::from(u16::from_be_bytes(prefix))];
+        stream.read_exact(&mut body).await.unwrap();
+        body
     }
 
     pub(crate) enum TcpStubBehavior {
@@ -142,10 +154,7 @@ pub(crate) mod tests {
                 return Vec::new();
             }
 
-            let mut prefix = [0u8; 2];
-            stream.read_exact(&mut prefix).await.unwrap();
-            let mut query = vec![0u8; usize::from(u16::from_be_bytes(prefix))];
-            stream.read_exact(&mut query).await.unwrap();
+            let query = read_frame(&mut stream).await;
             let received = frame(&query);
 
             let mut answer = query;
