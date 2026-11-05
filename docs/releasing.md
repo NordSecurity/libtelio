@@ -22,7 +22,10 @@ Pushing the tag triggers the release pipeline, which runs `ci/release.py` to:
 2. **Publish the GitLab release** with that changelog block as the release notes.
 3. **Open a PR** against the branch the release was cut from (`main` or a `release/vX.Y`
    branch) that removes the consumed `.unreleased/` files and, on a **final** (non-`-rc`) tag,
-   bumps `Cargo.toml` to the next version.
+   bumps the `telio` version in `Cargo.toml` and `Cargo.lock` to the next version
+   (via `cargo set-version` from cargo-edit, available in the release job's image).
+   If opening this PR fails, the error is logged and the release still completes — open the
+   PR manually.
 
 `ci/release.py` is run by the pipeline (not locally) and uses `GITHUB_WRITE_TOKEN` to publish
 the changelog and open the PR.
