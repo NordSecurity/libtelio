@@ -60,7 +60,7 @@ enum UpstreamReply {
         reply: Vec<u8>,
         /// Upstream that sent the truncated response
         upstream: SocketAddr,
-        /// Deadline of the UDP attempt, also bounding the TCP retry
+        /// Deadline of the TCP retry
         deadline: Instant,
     },
 }
@@ -222,7 +222,7 @@ impl UdpForwarder {
 
                             match recv_buf.get_mut(..n) {
                                 Some(response_bytes) => {
-                                    Self::handle_response(response_bytes, src, &mut pending);
+                                    Self::handle_response(response_bytes, src, timeout, &mut pending);
                                 }
                                 None =>  {
                                     telio_log_debug!("Failed to receive from upstream resolver, size overflow: {n}");
@@ -329,6 +329,7 @@ impl UdpForwarder {
     fn handle_response(
         response_bytes: &mut [u8],
         src: SocketAddr,
+        timeout: Duration,
         pending: &mut HashMap<u16, PendingQuery>,
     ) {
         let internal_id = match get_dns_id(response_bytes) {
@@ -362,7 +363,7 @@ impl UdpForwarder {
             UpstreamReply::Truncated {
                 reply: response_bytes.to_vec(),
                 upstream: src,
-                deadline: entry.deadline,
+                deadline: Instant::now() + timeout,
             }
         } else {
             UpstreamReply::Answer(response_bytes.to_vec())
@@ -784,7 +785,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn tcp_fallback_stays_within_udp_window() {
+    async fn tcp_fallback_stall_returns_truncated_reply_at_timeout() {
         let (addr, _udp, _tcp) =
             spawn_udp_tcp_stub(StubBehavior::EchoTruncated, TcpStubBehavior::Stall).await;
         let (forwarder, _upstreams) =
@@ -796,8 +797,9 @@ pub(crate) mod tests {
 
         let elapsed = Instant::now().duration_since(start);
         assert!(is_truncated(&result));
+        assert!(elapsed >= BLACKHOLE_QUERY_TIMEOUT, "{:?}", elapsed);
         assert!(
-            elapsed < BLACKHOLE_QUERY_TIMEOUT + Duration::from_millis(500),
+            elapsed < 2 * BLACKHOLE_QUERY_TIMEOUT + Duration::from_millis(500),
             "{:?}",
             elapsed
         );
