@@ -29,6 +29,8 @@ const FORWARDER_BUFFER_SIZE: usize = 4096;
 const CHANNEL_SIZE: usize = 256;
 /// Maximum number of DNS IDs
 const DNS_ID_SPACE: u32 = 65536;
+/// Offset of the first flags byte
+const DNS_FLAGS_OFFSET: usize = 2;
 /// Truncated flag
 const TC_FLAG: u8 = 0x02;
 
@@ -102,7 +104,9 @@ pub(crate) fn get_dns_id(packet: &[u8]) -> Result<u16, ForwardError> {
 
 /// True if the TC flag is set in the DNS header
 pub(crate) fn is_truncated(packet: &[u8]) -> bool {
-    packet.get(2).is_some_and(|flags| flags & TC_FLAG != 0)
+    packet
+        .get(DNS_FLAGS_OFFSET)
+        .is_some_and(|flags| flags & TC_FLAG != 0)
 }
 
 /// Overwrite the 16-bit transaction ID of a DNS packet
@@ -169,7 +173,12 @@ impl UdpForwarder {
                 reply,
                 upstream,
                 deadline,
-            } => Ok(tcp_fallback(upstream, request, deadline, reply).await),
+            } => Ok(tcp_fallback(upstream, request, deadline)
+                .await
+                .unwrap_or_else(|e| {
+                    telio_log_debug!("TCP fallback to {upstream} failed: {e}");
+                    reply
+                })),
         }
     }
 
@@ -479,7 +488,7 @@ pub(crate) mod tests {
     }
 
     pub(crate) fn set_tc(packet: &mut [u8]) {
-        packet[2] |= 0x02;
+        packet[DNS_FLAGS_OFFSET] |= TC_FLAG;
     }
 
     enum StubBehavior {
@@ -623,9 +632,9 @@ pub(crate) mod tests {
     fn is_truncated_detects_tc_flag() {
         let mut packet = vec![0u8; DNS_HEADER_OFFSET];
         assert!(!is_truncated(&packet));
-        packet[2] = 0x02;
+        set_tc(&mut packet);
         assert!(is_truncated(&packet));
-        packet[2] = 0xFD;
+        packet[DNS_FLAGS_OFFSET] = !TC_FLAG;
         assert!(!is_truncated(&packet), "every bit but TC");
     }
 

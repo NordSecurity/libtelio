@@ -6,7 +6,7 @@ use crate::{
     udp_forwarder::{get_dns_id, is_truncated},
 };
 use std::{convert::TryFrom, io, net::SocketAddr};
-use telio_utils::{sleep_until, telio_log_debug, Instant};
+use telio_utils::{sleep_until, Instant};
 use thiserror::Error;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -18,7 +18,7 @@ const TCP_LEN_PREFIX: usize = 2;
 
 /// Reasons a TCP fallback is abandoned
 #[derive(Debug, Error)]
-enum TcpFallbackError {
+pub(crate) enum TcpFallbackError {
     #[error("Query size wrong: {0}")]
     BadQuerySize(usize),
     #[error("Answer size wrong: {0}")]
@@ -73,13 +73,12 @@ fn accept_tcp_reply(reply: Vec<u8>, query_id: u16) -> Result<Vec<u8>, TcpFallbac
     Ok(reply)
 }
 
-/// Retry a query over TCP, returning the truncated reply if that fails
+/// Retry a query over TCP, giving up at `deadline`
 pub(crate) async fn tcp_fallback(
     upstream: SocketAddr,
     query: &[u8],
     deadline: Instant,
-    truncated_reply: Vec<u8>,
-) -> Vec<u8> {
+) -> Result<Vec<u8>, TcpFallbackError> {
     let exchange = async {
         let query_id =
             get_dns_id(query).map_err(|_| TcpFallbackError::BadQuerySize(query.len()))?;
@@ -87,15 +86,10 @@ pub(crate) async fn tcp_fallback(
         accept_tcp_reply(reply, query_id)
     };
 
-    let result = tokio::select! {
+    tokio::select! {
         res = exchange => res,
         _ = sleep_until(deadline) => Err(TcpFallbackError::Timeout),
-    };
-
-    result.unwrap_or_else(|e| {
-        telio_log_debug!("TCP fallback to {upstream} failed: {e}");
-        truncated_reply
-    })
+    }
 }
 
 #[cfg(test)]
@@ -193,25 +187,13 @@ pub(crate) mod tests {
         (addr, spawn_tcp_stub(listener, behavior))
     }
 
-    fn truncated_reply() -> Vec<u8> {
-        let mut reply = make_dns_packet(TEST_PACKET_ID, b"truncated-reply");
-        set_tc(&mut reply);
-        reply
-    }
-
     fn fallback_query() -> Vec<u8> {
         make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD)
     }
 
-    async fn fallback_with(behavior: TcpStubBehavior) -> Vec<u8> {
+    async fn fallback_with(behavior: TcpStubBehavior) -> Result<Vec<u8>, TcpFallbackError> {
         let (addr, _stub) = tcp_stub(behavior).await;
-        tcp_fallback(
-            addr,
-            &fallback_query(),
-            Instant::now() + QUERY_TIMEOUT,
-            truncated_reply(),
-        )
-        .await
+        tcp_fallback(addr, &fallback_query(), Instant::now() + QUERY_TIMEOUT).await
     }
 
     #[test]
@@ -278,7 +260,9 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn tcp_fallback_returns_tcp_answer() {
-        let result = fallback_with(TcpStubBehavior::Echo { pad_to: 1500 }).await;
+        let result = fallback_with(TcpStubBehavior::Echo { pad_to: 1500 })
+            .await
+            .unwrap();
 
         assert_eq!(result.len(), 1500);
         assert_eq!(get_dns_id(&result).unwrap(), TEST_PACKET_ID);
@@ -287,7 +271,9 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn tcp_fallback_reads_split_frame() {
-        let result = fallback_with(TcpStubBehavior::EchoSplit { pad_to: 1500 }).await;
+        let result = fallback_with(TcpStubBehavior::EchoSplit { pad_to: 1500 })
+            .await
+            .unwrap();
 
         assert_eq!(result.len(), 1500);
         assert_eq!(get_dns_id(&result).unwrap(), TEST_PACKET_ID);
@@ -298,13 +284,9 @@ pub(crate) mod tests {
     async fn tcp_fallback_sends_framed_query() {
         let (addr, stub) = tcp_stub(TcpStubBehavior::Echo { pad_to: 0 }).await;
 
-        tcp_fallback(
-            addr,
-            &fallback_query(),
-            Instant::now() + QUERY_TIMEOUT,
-            truncated_reply(),
-        )
-        .await;
+        tcp_fallback(addr, &fallback_query(), Instant::now() + QUERY_TIMEOUT)
+            .await
+            .unwrap();
 
         assert_eq!(stub.await.unwrap(), frame(&fallback_query()));
     }
@@ -314,77 +296,69 @@ pub(crate) mod tests {
         let result = fallback_with(TcpStubBehavior::Echo {
             pad_to: TCP_FALLBACK_MAX_RESPONSE,
         })
-        .await;
+        .await
+        .unwrap();
 
         assert_eq!(result.len(), TCP_FALLBACK_MAX_RESPONSE);
     }
 
     #[tokio::test]
-    async fn tcp_fallback_oversize_returns_truncated_reply() {
+    async fn tcp_fallback_rejects_oversize_answer() {
         let result = fallback_with(TcpStubBehavior::Echo {
             pad_to: TCP_FALLBACK_MAX_RESPONSE + 1,
         })
         .await;
 
-        assert_eq!(result, truncated_reply());
+        assert!(matches!(
+            result,
+            Err(TcpFallbackError::BadAnswerSize(len)) if len == TCP_FALLBACK_MAX_RESPONSE + 1
+        ));
     }
 
     #[tokio::test]
-    async fn tcp_fallback_wrong_id_returns_truncated_reply() {
-        assert_eq!(
+    async fn tcp_fallback_rejects_wrong_id() {
+        assert!(matches!(
             fallback_with(TcpStubBehavior::EchoWrongId).await,
-            truncated_reply()
-        );
+            Err(TcpFallbackError::IdMismatch)
+        ));
     }
 
     #[tokio::test]
-    async fn tcp_fallback_tc_answer_returns_truncated_reply() {
-        assert_eq!(
+    async fn tcp_fallback_rejects_truncated_answer() {
+        assert!(matches!(
             fallback_with(TcpStubBehavior::EchoTruncated).await,
-            truncated_reply()
-        );
+            Err(TcpFallbackError::Truncated)
+        ));
     }
 
     #[tokio::test]
-    async fn tcp_fallback_closed_connection_returns_truncated_reply() {
-        assert_eq!(
+    async fn tcp_fallback_closed_connection_fails() {
+        assert!(matches!(
             fallback_with(TcpStubBehavior::Close).await,
-            truncated_reply()
-        );
+            Err(TcpFallbackError::Io(_))
+        ));
     }
 
     #[tokio::test]
-    async fn tcp_fallback_connect_refused_returns_truncated_reply() {
+    async fn tcp_fallback_connect_refused_fails() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         drop(listener);
 
-        let result = tcp_fallback(
-            addr,
-            &fallback_query(),
-            Instant::now() + QUERY_TIMEOUT,
-            truncated_reply(),
-        )
-        .await;
+        let result = tcp_fallback(addr, &fallback_query(), Instant::now() + QUERY_TIMEOUT).await;
 
-        assert_eq!(result, truncated_reply());
+        assert!(matches!(result, Err(TcpFallbackError::Io(_))));
     }
 
     #[tokio::test]
-    async fn tcp_fallback_stall_returns_truncated_reply_at_deadline() {
+    async fn tcp_fallback_stall_times_out_at_deadline() {
         let (addr, _stub) = tcp_stub(TcpStubBehavior::Stall).await;
         let start = Instant::now();
 
-        let result = tcp_fallback(
-            addr,
-            &fallback_query(),
-            start + BLACKHOLE_QUERY_TIMEOUT,
-            truncated_reply(),
-        )
-        .await;
+        let result = tcp_fallback(addr, &fallback_query(), start + BLACKHOLE_QUERY_TIMEOUT).await;
 
         let elapsed = Instant::now().duration_since(start);
-        assert_eq!(result, truncated_reply());
+        assert!(matches!(result, Err(TcpFallbackError::Timeout)));
         assert!(elapsed >= BLACKHOLE_QUERY_TIMEOUT, "{:?}", elapsed);
         assert!(
             elapsed < BLACKHOLE_QUERY_TIMEOUT + Duration::from_millis(500),
@@ -394,13 +368,13 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn tcp_fallback_past_deadline_returns_truncated_reply() {
+    async fn tcp_fallback_past_deadline_times_out() {
         let (addr, _stub) = tcp_stub(TcpStubBehavior::Stall).await;
         let start = Instant::now();
 
-        let result = tcp_fallback(addr, &fallback_query(), start, truncated_reply()).await;
+        let result = tcp_fallback(addr, &fallback_query(), start).await;
 
-        assert_eq!(result, truncated_reply());
+        assert!(matches!(result, Err(TcpFallbackError::Timeout)));
         assert!(Instant::now().duration_since(start) < Duration::from_millis(100));
     }
 }
