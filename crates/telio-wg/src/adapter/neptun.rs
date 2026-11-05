@@ -37,42 +37,20 @@ impl NepTUN {
         firewall_process_outbound_callback: FirewallOutboundCb,
         firewall_reset_connections_callback: super::FirewallResetConnsCb,
         skt_buffer_size: Option<u32>,
-        inter_thread_channel_size: Option<u32>,
-        max_inter_thread_batched_pkts: Option<u32>,
     ) -> Result<Self, AdapterError> {
         use std::os::fd::RawFd;
 
         let config = DeviceConfig {
-            // Apple's NepTUN device runs most efficiently on a single perf-core
-            n_threads: {
-                if cfg!(target_os = "android") {
-                    // A large set of supported android devices
-                    // have 4 "performance" cores
-                    4
-                } else if cfg!(not(any(
-                    target_os = "ios",
-                    target_os = "macos",
-                    target_os = "tvos"
-                ))) {
-                    num_cpus::get()
-                } else {
-                    1
-                }
-            },
             use_connected_socket: cfg!(not(any(
                 target_os = "ios",
                 target_os = "macos",
                 target_os = "tvos"
             ))),
-            #[cfg(target_os = "linux")]
-            use_multi_queue: true,
             open_uapi_socket: false,
             protect: socket_pool,
             firewall_process_inbound_callback,
             firewall_process_outbound_callback,
             skt_buffer_size: skt_buffer_size.map(|v| v as usize),
-            inter_thread_channel_size: inter_thread_channel_size.map(|v| v as usize),
-            max_inter_thread_batched_pkts: max_inter_thread_batched_pkts.map(|v| v as usize),
         };
 
         let device = match tun {

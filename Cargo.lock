@@ -2747,13 +2747,12 @@ dependencies = [
 [[package]]
 name = "neptun"
 version = "2.2.3"
-source = "git+https://github.com/NordSecurity/neptun.git?tag=v3.0.5#ed75813cebb00c2fbe1a7723764c12dd381818c3"
+source = "git+https://github.com/NordSecurity/neptun.git?branch=LLT-7573_two_thread_data_plane_model#702cceb7fbc072622c77879de7cc318f5e310980"
 dependencies = [
  "aead",
  "base64",
  "blake2",
  "chacha20poly1305",
- "crossbeam-channel",
  "dispatch2",
  "hex",
  "hmac 0.12.1",
@@ -2761,7 +2760,6 @@ dependencies = [
  "ip_network_table",
  "libc",
  "nix 0.31.3",
- "num_cpus",
  "parking_lot",
  "rand_core 0.6.4",
  "ring",
