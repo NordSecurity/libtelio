@@ -81,6 +81,8 @@ struct PendingQuery {
     query_bytes: Vec<u8>,
     /// Failover cursor over the upstream list
     upstream_cursor: UpstreamCursor,
+    /// Upstream the query was last sent to
+    sent_to: SocketAddr,
     /// Channel to send the response back to the caller
     respond_to: oneshot::Sender<Result<UpstreamReply, ForwardError>>,
     /// Instant when request times out
@@ -304,6 +306,7 @@ impl UdpForwarder {
                 original_id,
                 query_bytes: rewritten_bytes,
                 upstream_cursor,
+                sent_to: upstream_addr,
                 respond_to: msg.respond_to,
                 deadline: Instant::now() + timeout,
             },
@@ -340,6 +343,20 @@ impl UdpForwarder {
             }
         };
 
+        let truncated = is_truncated(response_bytes);
+        if truncated {
+            if let Some(stale) = pending
+                .get(&internal_id)
+                .filter(|e| e.sent_to.ip() != src.ip())
+            {
+                telio_log_debug!(
+                    "Dropping truncated response for request: {internal_id} from {src}, sent to {}",
+                    stale.sent_to
+                );
+                return;
+            }
+        }
+
         let entry = match pending.remove(&internal_id) {
             Some(e) => e,
             None => {
@@ -358,11 +375,11 @@ impl UdpForwarder {
             return;
         }
 
-        let reply = if is_truncated(response_bytes) {
+        let reply = if truncated {
             telio_log_debug!("Truncated response for request: {internal_id}, retrying over TCP");
             UpstreamReply::Truncated {
                 reply: response_bytes.to_vec(),
-                upstream: src,
+                upstream: entry.sent_to,
                 deadline: Instant::now() + timeout,
             }
         } else {
@@ -419,6 +436,7 @@ impl UdpForwarder {
                         "Upstream timed out for request: {internal_id}, trying next: {next_upstream}"
                     );
                     entry.deadline = Instant::now() + timeout;
+                    entry.sent_to = next_upstream;
 
                     if let Err(e) = socket.send_to(&entry.query_bytes, next_upstream).await {
                         send_channel_response!(entry.respond_to, Err(ForwardError::SendFailed(e)));
@@ -443,6 +461,8 @@ pub(crate) mod tests {
         nameserver::QUERY_TIMEOUT,
         tcp_fallback::tests::{frame, spawn_tcp_stub, TcpStubBehavior},
     };
+    use std::net::Ipv4Addr;
+    use telio_model::constants::DNS_PORT;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
     use tokio::task::JoinHandle;
@@ -593,6 +613,7 @@ pub(crate) mod tests {
             original_id: 0,
             query_bytes: vec![],
             upstream_cursor: UpstreamList::default().new_cursor(),
+            sent_to: SocketAddr::from((Ipv4Addr::LOCALHOST, DNS_PORT)),
             respond_to: oneshot::channel().0,
             deadline: Instant::now(),
         }
