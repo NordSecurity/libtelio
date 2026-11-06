@@ -316,8 +316,8 @@ class LibtelioWrapper:
         self._libtelio.generate_stack_panic()
 
     @serialize_error
-    def generate_error(self):
-        self._libtelio.generate_error()
+    def generate_error(self, from_async: bool):
+        self._libtelio.generate_error(from_async)
 
     @serialize_error
     def flush_logs(self):

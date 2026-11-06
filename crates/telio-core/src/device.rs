@@ -1016,6 +1016,26 @@ impl Device {
             .await?
         })
     }
+
+    pub fn generate_async_backtrace(&self) -> Result<()> {
+        self.async_runtime()?.block_on(async { foo().await })
+    }
+}
+
+async fn foo() -> Result<()> {
+    bar().await
+}
+
+async fn bar() -> Result<()> {
+    baz().await
+}
+
+async fn baz() -> Result<()> {
+    quux().await
+}
+
+async fn quux() -> Result<()> {
+    Err(ErrorVariant::PollingPeriodZero.into())
 }
 
 impl Drop for Device {
