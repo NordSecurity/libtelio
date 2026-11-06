@@ -56,6 +56,8 @@ jobs:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - name: Test replacement script
         run: python3 ci/test_replace_string.py
+      - name: Test version check script
+        run: python3 ci/test_check_libtelio_version.py
 
   test-nordvpnlite:
     runs-on: ubuntu-22.04
@@ -127,13 +129,13 @@ jobs:
           fi
           python3 ci/insert_libtelio_version.py -n TEST_VERSION -p ./${DIST_PATH}
           ./${DIST_PATH}/release/${{ matrix.arch }}/tcli
-          head -n 1 tcli.log | grep -a "TEST_VERSION"
+          python3 ci/check_libtelio_version.py -n TEST_VERSION -f tcli.log
       - name: Replace and Test version
         if: ${{ matrix.target_os == 'windows' }}
         run: |
           python ./ci/insert_libtelio_version.py -n TEST_VERSION -p ./dist/windows
           Start-Process -FilePath dist/windows/release/x86_64/tcli.exe -WindowStyle Hidden
-          type tcli.log | findstr /C:"TEST_VERSION"
+          python ./ci/check_libtelio_version.py -n TEST_VERSION -f tcli.log
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: libtelio-build-${{ matrix.target_os }}-${{ matrix.arch }}-with-replaced-version
