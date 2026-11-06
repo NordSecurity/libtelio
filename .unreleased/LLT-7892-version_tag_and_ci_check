@@ -1,0 +1,1 @@
+Fix version tag padded with NULs after version insertion, which broke meshnet connections
