@@ -354,9 +354,19 @@ pub(crate) mod tests {
         let addr = listener.local_addr().unwrap();
         drop(listener);
 
-        let result = tcp_fallback(addr, &fallback_query(), Instant::now() + QUERY_TIMEOUT).await;
+        let result = tcp_fallback(
+            addr,
+            &fallback_query(),
+            Instant::now() + Duration::from_secs(5),
+        )
+        .await;
 
-        assert!(matches!(result, Err(TcpFallbackError::Io(_))));
+        dbg!(&result);
+        assert!(
+            matches!(result, Err(TcpFallbackError::Io(_))),
+            "{:?}",
+            result
+        );
     }
 
     #[tokio::test]
