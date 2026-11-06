@@ -127,13 +127,13 @@ jobs:
           fi
           python3 ci/insert_libtelio_version.py -n TEST_VERSION -p ./${DIST_PATH}
           ./${DIST_PATH}/release/${{ matrix.arch }}/tcli
-          head -n 1 tcli.log | grep -a "TEST_VERSION"
+          grep -aF "Created libtelio instance TEST_VERSION, " tcli.log
       - name: Replace and Test version
         if: ${{ matrix.target_os == 'windows' }}
         run: |
           python ./ci/insert_libtelio_version.py -n TEST_VERSION -p ./dist/windows
           Start-Process -FilePath dist/windows/release/x86_64/tcli.exe -WindowStyle Hidden
-          type tcli.log | findstr /C:"TEST_VERSION"
+          type tcli.log | findstr /C:"Created libtelio instance TEST_VERSION, "
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: libtelio-build-${{ matrix.target_os }}-${{ matrix.arch }}-with-replaced-version
