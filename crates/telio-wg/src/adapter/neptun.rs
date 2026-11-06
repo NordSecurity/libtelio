@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use neptun::device::{tun::TunSocket, DeviceConfig, DeviceHandle};
+use neptun::device::{tun::TunSocket, DataPlaneLayout, DeviceConfig, DeviceHandle};
 use slog::{o, Drain};
 use slog_stdlog::StdLog;
 use std::net::{IpAddr, Ipv4Addr};
@@ -51,6 +51,15 @@ impl NepTUN {
             firewall_process_inbound_callback,
             firewall_process_outbound_callback,
             skt_buffer_size: skt_buffer_size.map(|v| v as usize),
+            data_plane_layout: if cfg!(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos"
+            )) {
+                DataPlaneLayout::Single
+            } else {
+                DataPlaneLayout::Split
+            },
         };
 
         let device = match tun {
