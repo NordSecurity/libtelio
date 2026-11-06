@@ -1,0 +1,1 @@
+Raw forwarder is not RFC 6891 compliant (EDNS size OPT) and can get a response up to 1968 bytes over UDP.
