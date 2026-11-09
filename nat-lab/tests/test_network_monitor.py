@@ -48,21 +48,41 @@ async def test_network_monitor(
         NR_OF_NOTIFICATIONS = 12
         NOT_GREATER = True
     elif target_os == TargetOS.Windows:
-        NR_OF_NOTIFICATIONS = 10
+        # Notifications for each of IPv4 and IPv6:
+        # disable: 2 parameter changes + 1 interface removed
+        # enable: 1 interface added + 2 parameter changes (before Connected=true)
+        NR_OF_NOTIFICATIONS = 12
         NOT_GREATER = False
     else:
         NR_OF_NOTIFICATIONS = 4
         NOT_GREATER = True
 
     PLATFORM_AGNOSTIC_MESSAGE = "Detected network interface modification"
+    # Logged by the Windows monitor for an interface that is up
+    WIN_CONNECTED = "Connected=true"
 
     await asyncio.sleep(DEFAULT_WAITING_TIME)
-    await client_alpha.restart_interface()
+    if target_os == TargetOS.Windows:
+        # Count only notifications caused by disable/enable, not by adapter creation
+        logs_before = await client_alpha.log.get()
+        notifications_before = logs_before.count(PLATFORM_AGNOSTIC_MESSAGE)
+        connected_before = logs_before.count(WIN_CONNECTED)
+        await client_alpha.get_router().disable_interface()
+        await client_alpha.get_router().enable_interface()
+    else:
+        notifications_before = connected_before = 0
+        await client_alpha.restart_interface()
 
     async def check_logs(msg, count):
         await client_alpha.log.wait_for(msg, count=count, not_greater=NOT_GREATER)
 
-    await check_logs(PLATFORM_AGNOSTIC_MESSAGE, NR_OF_NOTIFICATIONS)
+    await check_logs(
+        PLATFORM_AGNOSTIC_MESSAGE, notifications_before + NR_OF_NOTIFICATIONS
+    )
+
+    if target_os == TargetOS.Windows:
+        # Interface is up again: Connected=true for IPv4 and IPv6
+        await check_logs(WIN_CONNECTED, connected_before + 2)
 
     if client_alpha.get_connection().target_os == TargetOS.Linux:
         PREFIX = "Received netfilter message: "
