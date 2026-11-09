@@ -9,12 +9,12 @@ pub fn commit_sha() -> &'static str {
 #[inline(never)]
 #[allow(clippy::indexing_slicing)]
 pub fn version_tag() -> &'static str {
-    const VER: [u8;129] = *b"VERSION_PLACEHOLDER@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\0";
-    match VER.iter().position(|v| *v == 0) {
-        Some(i) => match std::str::from_utf8(&VER[..i]) {
-            Ok(s) => s,
-            Err(_) => "not_a_utf8_string",
-        },
+    static VER: [u8;129] = *b"VERSION_PLACEHOLDER@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\0";
+    // Hide the contents from the optimizer, so the NUL is searched for at runtime
+    // in the patched placeholder (LLT-7892)
+    let ver: &'static [u8; 129] = std::hint::black_box(&VER);
+    match ver.iter().position(|v| *v == 0) {
+        Some(i) => std::str::from_utf8(&ver[..i]).unwrap_or("not_a_utf8_string"),
         None => "incorrect_version_string",
     }
 }
