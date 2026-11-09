@@ -178,6 +178,7 @@ class IperfClient:
         send: bool = True,
         output_unit: ThroughputUnit = ThroughputUnit.KILOBITS,
         json_output: bool = False,
+        bitrate: str = "10G",
     ):
         self._json_enabled = json_output
         self._json_data = None
@@ -206,7 +207,7 @@ class IperfClient:
             "" if protocol == Protocol.Tcp else "-u",
             "" if protocol == Protocol.Tcp else "--udp-counters-64bit",
             "-b",
-            "10G",
+            bitrate,
             "" if send else "-R",
             "--json" if json_output else "",
         ])

@@ -23,10 +23,13 @@ PERF_CMD = [
     "dwarf",
     "-e",
     "cpu-clock",
+    "-k",
+    "CLOCK_MONOTONIC",
     "-o",
     PERF_OUTPUT_PATH,
     "--",
 ]
+PERF_ROUNDS_PATH = "/tmp/perf_rounds.txt"  # "start end" per line, CLOCK_MONOTONIC seconds
 
 
 @dataclass
@@ -76,7 +79,8 @@ class PerfProfiler:
         await self.setup_debug_symbols()
         await self.wait_for_completion()
         await self.generate_flame_graphs()
-        await self.save_results()
+        round_files = await self.generate_round_folded_stacks()
+        await self.save_results(round_files)
         return False
 
     async def wait_for_completion(self) -> None:
@@ -135,7 +139,27 @@ class PerfProfiler:
         )
         await self.connection.create_process(["sh", "-c", cmd_full]).execute()
 
-    async def save_results(self) -> None:
+    async def generate_round_folded_stacks(self) -> list[str]:
+        """One folded file per round listed in PERF_ROUNDS_PATH, if the test wrote it."""
+        out = await self.connection.create_process(
+            ["sh", "-c", f"cat {PERF_ROUNDS_PATH} 2>/dev/null || true"], quiet=True
+        ).execute()
+        files = []
+        for i, line in enumerate(
+            l for l in out.get_stdout().splitlines() if l.strip()
+        ):
+            start, end = line.split()
+            name = self._apply_suffix(f"connect_node_folded_stacks_r{i:02d}.txt")
+            cmd = (
+                f"perf script --demangle -i {PERF_OUTPUT_PATH} --symfs {TEMP_DEBUG_SYMBOLS_FOLDER}"
+                f" --time {start},{end} | stackcollapse-perf.pl"
+                f" | egrep '(tokio|libtelio|telio|neptun)' > /tmp/{name}"
+            )
+            await self.connection.create_process(["sh", "-c", cmd]).execute()
+            files.append(name)
+        return files
+
+    async def save_results(self, round_files: Optional[list[str]] = None) -> None:
         """Download perf data, flame graphs, and folded stacks to local directory."""
         log_dir = self.output_dir or get_current_test_log_path()
         os.makedirs(log_dir, exist_ok=True)
@@ -157,3 +181,5 @@ class PerfProfiler:
         await self.connection.download(
             f"/tmp/{self.folded_stacks_file}", folded_stacks_path
         )
+        for name in round_files or []:
+            await self.connection.download(f"/tmp/{name}", os.path.join(log_dir, name))
