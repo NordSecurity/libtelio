@@ -5,13 +5,13 @@ from pathlib import PureWindowsPath
 from tests.helpers import SetupParameters, Environment
 from tests.libtelio_client import Client
 from tests.uniffi.libtelio_proxy import BacktraceLocation, LibtelioError
-from tests.utils.connection import ConnectionTag
+from tests.utils.connection import ConnectionTag, TargetOS
 from tests.utils.debug_symbols import (
     ResolvedFunction,
     libtelio_debug_files,
     resolve_return_addresses,
 )
-from typing import Awaitable, Callable, List, Optional
+from typing import Awaitable, Callable, Dict, List, Optional
 
 LIBTELIO_MODULES = {"libtelio.so", "libtelio.dylib", "telio.dll"}
 RELEASE_PROFILE = "release"
@@ -22,6 +22,13 @@ class ExpectedFrame:
     function: str
     # Line the frame must resolve to, None = only function name and file are verified.
     line: Optional[int] = None
+    # Per-OS line overrides, for toolchains that attribute the frame to a different line.
+    os_lines: Optional[Dict[TargetOS, int]] = None
+
+    def line_for(self, target_os: TargetOS) -> Optional[int]:
+        if self.os_lines and target_os in self.os_lines:
+            return self.os_lines[target_os]
+        return self.line
 
 
 @dataclass(frozen=True)
@@ -39,7 +46,7 @@ STACK_PANIC = ErrorSource(
     allowed_errors=[r"panicked at src.ffi\.rs"],
     calls_innermost_first=[
         ExpectedFrame("TelioError"),
-        ExpectedFrame("catch_ffi_panic", 109),
+        ExpectedFrame("catch_ffi_panic", 109, {TargetOS.Windows: 112}),
         ExpectedFrame("generate_stack_panic", 1116),
     ],
     file_name="ffi.rs",
@@ -55,8 +62,8 @@ GENERATED_ERROR = ErrorSource(
         ExpectedFrame("baz", 1169),
         ExpectedFrame("bar", 1165),
         ExpectedFrame("foo", 1161),
-        ExpectedFrame("catch_ffi_panic", 95),
-        ExpectedFrame("generate_error", 1155),
+        ExpectedFrame("catch_ffi_panic", 95, {TargetOS.Windows: 102}),
+        ExpectedFrame("generate_error", 1155, {TargetOS.Windows: 1148}),
     ],
     file_name="ffi.rs",
 )
@@ -66,10 +73,10 @@ GENERATED_ASYNC_ERROR = ErrorSource(
     message="UnknownError: PollingPeriodZero",
     allowed_errors=[],
     calls_innermost_first=[
-        ExpectedFrame("quux", 1038),
-        ExpectedFrame("baz", 1034),
-        ExpectedFrame("bar", 1030),
-        ExpectedFrame("foo", 1026),
+        ExpectedFrame("quux", 1042, {TargetOS.Windows: 1043}),
+        ExpectedFrame("baz", 1038),
+        ExpectedFrame("bar", 1034),
+        ExpectedFrame("foo", 1030),
     ],
     file_name="device.rs",
 )
@@ -118,7 +125,7 @@ def libtelio_frames(error: LibtelioError) -> List[BacktraceLocation]:
 
 
 def verify_calls_in_order(
-    source: ErrorSource, functions: List[ResolvedFunction]
+    source: ErrorSource, functions: List[ResolvedFunction], target_os: TargetOS
 ) -> None:
     remaining = iter(functions)
     for frame in source.calls_innermost_first:
@@ -135,9 +142,11 @@ def verify_calls_in_order(
         assert (
             resolved is not None
         ), f"{frame.function} ({source.file_name}) not found in order in: {functions}"
-        if frame.line is not None:
-            assert resolved.line == frame.line, (
-                f"{frame.function}: expected {source.file_name}:{frame.line}, "
+        expected_line = frame.line_for(target_os)
+        if expected_line is not None:
+            assert resolved.line == expected_line, (
+                f"{frame.function}: expected {source.file_name}:{expected_line} "
+                f"({target_os.name}), "
                 f"got {resolved.file}:{resolved.line}"
             )
 
@@ -159,9 +168,10 @@ async def test_error_backtrace_resolves(
     assert frames, f"no libtelio frame in backtrace: {error.backtrace}"
     addresses = [frame.address for frame in frames if frame.address is not None]
     assert len(addresses) == len(frames), f"libtelio frames without address: {frames}"
-    library, debug = libtelio_debug_files(client.get_connection().target_os)
+    target_os = client.get_connection().target_os
+    library, debug = libtelio_debug_files(target_os)
 
     resolved = await resolve_return_addresses(library, debug, addresses)
 
     assert {frame.module_id for frame in frames} == {resolved.module_id}
-    verify_calls_in_order(error_source, resolved.functions)
+    verify_calls_in_order(error_source, resolved.functions, target_os)
