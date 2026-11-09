@@ -1149,6 +1149,21 @@ impl MeshnetEntities {
     }
 }
 
+/// Iterations of extra work per exit node connect. Tune to change the regression size.
+const INJECTED_CONNECT_REGRESSION_ITERATIONS: u64 = 5_000_000;
+
+/// DELIBERATE CPU REGRESSION - DO NOT MERGE.
+/// Used to validate flame graph analysis: burns a few ms of CPU on every exit node connect.
+#[inline(never)]
+fn injected_connect_cpu_regression() -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for i in 0..std::hint::black_box(INJECTED_CONNECT_REGRESSION_ITERATIONS) {
+        hash ^= i;
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    hash
+}
+
 impl Runtime {
     async fn start(
         libtelio_wide_event_publisher: Tx<Box<Event>>,
@@ -2381,6 +2396,7 @@ impl Runtime {
     }
 
     async fn connect_exit_node_internal(&mut self, config: ConnectionConfig) -> Result {
+        std::hint::black_box(injected_connect_cpu_regression());
         let exit_node = ExitNode {
             identifier: config
                 .identifier

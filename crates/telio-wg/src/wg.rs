@@ -879,6 +879,9 @@ impl State {
                         let new_rx = peer.rx_bytes.unwrap_or_default();
                         let new_tx = peer.tx_bytes.unwrap_or_default();
 
+                        std::hint::black_box(injected_traffic_cpu_regression(
+                            new_tx.saturating_sub(s.tx_bytes),
+                        ));
                         s.update(new_rx, new_tx, now);
                     }
                     Err(e) => {
@@ -1043,6 +1046,23 @@ impl State {
                 && lhs.time_since_last_handshake == rhs.time_since_last_handshake
                 && lhs.preshared_key == rhs.preshared_key
     }
+}
+
+/// Transmitted bytes per iteration of extra work. Raise it to make the regression smaller.
+const INJECTED_REGRESSION_BYTES_PER_ITERATION: u64 = 1;
+
+/// DELIBERATE CPU REGRESSION - DO NOT MERGE.
+/// Used to validate flame graph analysis: on every WG stats poll, burns CPU
+/// proportionally to the bytes transmitted since the previous poll.
+#[inline(never)]
+fn injected_traffic_cpu_regression(tx_bytes_delta: u64) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let iterations = tx_bytes_delta / INJECTED_REGRESSION_BYTES_PER_ITERATION;
+    for i in 0..std::hint::black_box(iterations) {
+        hash ^= i;
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    hash
 }
 
 #[async_trait]
