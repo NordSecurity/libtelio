@@ -1,4 +1,5 @@
 import asyncssh
+import glob
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -6,6 +7,7 @@ from enum import StrEnum
 from tests.config import get_root_path, LAN_ADDR_MAP
 from tests.utils.connection import Connection, ConnectionTag
 from tests.utils.process import ProcessExecError
+from typing import Optional
 
 _PROFILE = os.getenv("TELIO_BIN_PROFILE")
 
@@ -20,6 +22,8 @@ CDN_WEB_ROOT = "/var/www/nordvpnlite/"
 
 CUSTOM_FEEDS_CONF = "/etc/opkg/customfeeds.conf"
 
+_USE_FEED = "GITLAB_CI" in os.environ
+
 
 class PkgManager(StrEnum):
     OPKG = "opkg"
@@ -32,10 +36,16 @@ class OpenwrtVmConfig:
     cdn_arch: str
     dist_dir: str
     pkg_manager: PkgManager
+    # `--arch` of libtelio-build's ci/build.sh
+    build_arch: str
 
     @property
     def dist_path(self) -> str:
         return f"dist/openwrt/{_PROFILE}/{self.dist_dir}/{self.version}/"
+
+    @property
+    def local_dist_path(self) -> str:
+        return f"dist/openwrt/{_PROFILE}/{self.build_arch}/"
 
     @property
     def feed_url(self) -> str:
@@ -47,6 +57,8 @@ class OpenwrtVmConfig:
 
 
 class _OpenwrtPackageManager(ABC):
+    PKG_EXT: str
+
     def __init__(self, connection: Connection, cfg: OpenwrtVmConfig):
         self._conn = connection
         self._cfg = cfg
@@ -54,17 +66,40 @@ class _OpenwrtPackageManager(ABC):
     @abstractmethod
     def cdn_files(self) -> list[tuple[str, str]]: ...
 
-    async def install_nordvpnlite(self) -> None:
+    def local_package(self) -> str:
+        pattern = get_root_path(
+            f"{self._cfg.local_dist_path}nordvpnlite*.{self.PKG_EXT}"
+        )
+        matches = glob.glob(pattern)
+        if len(matches) != 1:
+            debug_flag = " --debug" if _PROFILE == "debug" else ""
+            raise RuntimeError(
+                f"Expected exactly one package matching {pattern}, found"
+                f" {matches}. Build it from libtelio-build with:"
+                f" LIBTELIO_ENV_OPENWRT_RELEASE_BUILD_TAG={self._cfg.version}"
+                f" ci/build.sh --default openwrt --arch {self._cfg.build_arch}"
+                f"{debug_flag} --ipk-package"
+            )
+        return matches[0]
+
+    async def install_nordvpnlite(self, local_pkg_path: Optional[str] = None) -> None:
+        """Install from the CDN feed, or from `local_pkg_path` when given."""
         try:
             await self._uninstall_existing()
             await self._copy_test_certificate()
-            await self._add_signing_key()
-            await self._disable_default_feeds()
-            await self._add_custom_feed()
-            await self._update_and_install()
+            if local_pkg_path is None:
+                await self._add_signing_key()
+                await self._disable_default_feeds()
+                await self._add_custom_feed()
+                await self._update_and_install()
+            else:
+                remote_pkg_path = f"/tmp/{os.path.basename(local_pkg_path)}"
+                await self._conn.upload_file(local_pkg_path, remote_pkg_path)
+                await self._install_file(remote_pkg_path)
+                await self._conn.create_process(["rm", "-f", remote_pkg_path]).execute()
             await self._conn.create_process(["nordvpnlite", "--version"]).execute()
         except ProcessExecError as e:
-            raise RuntimeError(f"Feed setup/install failed: {e}") from e
+            raise RuntimeError(f"nordvpnlite install failed: {e}") from e
 
     async def _copy_test_certificate(self) -> None:
         await self._conn.create_process(["mkdir", "-p", OWR_CERT_PATH]).execute()
@@ -88,9 +123,13 @@ class _OpenwrtPackageManager(ABC):
     @abstractmethod
     async def _update_and_install(self) -> None: ...
 
+    @abstractmethod
+    async def _install_file(self, remote_pkg_path: str) -> None: ...
+
 
 class _OpkgPackageManager(_OpenwrtPackageManager):
     PUB_KEY_NAME = "nordvpnlite-feed.pub"
+    PKG_EXT = "ipk"
 
     def cdn_files(self) -> list[tuple[str, str]]:
         return [
@@ -137,9 +176,13 @@ class _OpkgPackageManager(_OpenwrtPackageManager):
         await self._conn.create_process(["opkg", "update"]).execute()
         await self._conn.create_process(["opkg", "install", "nordvpnlite"]).execute()
 
+    async def _install_file(self, remote_pkg_path: str) -> None:
+        await self._conn.create_process(["opkg", "install", remote_pkg_path]).execute()
+
 
 class _ApkPackageManager(_OpenwrtPackageManager):
     PUB_KEY_NAME = "nordvpnlite-apk.rsa.pub"
+    PKG_EXT = "apk"
 
     def cdn_files(self) -> list[tuple[str, str]]:
         return [
@@ -186,13 +229,19 @@ class _ApkPackageManager(_OpenwrtPackageManager):
         await self._conn.create_process(["apk", "update"]).execute()
         await self._conn.create_process(["apk", "add", "nordvpnlite"]).execute()
 
+    async def _install_file(self, remote_pkg_path: str) -> None:
+        # Unsigned local build, no index to verify it against.
+        await self._conn.create_process(
+            ["apk", "add", "--allow-untrusted", remote_pkg_path]
+        ).execute()
+
 
 OPENWRT_VM_CONFIG = {
     ConnectionTag.VM_OPENWRT_GW_1: OpenwrtVmConfig(
-        "25.12.0", "x86_64", "x86_64", PkgManager.APK
+        "25.12.0", "x86_64", "x86_64", PkgManager.APK, "x86_64"
     ),
     ConnectionTag.VM_OPENWRT_GW_3: OpenwrtVmConfig(
-        "24.10.4", "mipsel_24kc", "ramips-mt7621", PkgManager.OPKG
+        "24.10.4", "mipsel_24kc", "ramips-mt7621", PkgManager.OPKG, "mipsel"
     ),
 }
 
@@ -223,6 +272,9 @@ async def copy_binaries(
 ) -> None:
     cfg = OPENWRT_VM_CONFIG[tag]
     pkg_manager = _PKG_MANAGERS[cfg.pkg_manager](connection, cfg)
+    if not _USE_FEED:
+        await pkg_manager.install_nordvpnlite(pkg_manager.local_package())
+        return
     async with asyncssh.connect(
         CDN_HOST,
         username="root",
