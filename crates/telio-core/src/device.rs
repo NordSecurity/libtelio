@@ -1016,6 +1016,30 @@ impl Device {
             .await?
         })
     }
+
+    pub fn generate_async_backtrace(&self) -> Result<()> {
+        self.async_runtime()?.block_on(async { foo().await })
+    }
+}
+
+// Test-only: a known chain of nested async calls (foo -> bar -> baz -> quux) used by
+// `generate_async_backtrace`. nat-lab `test_backtrace.py` checks that the error backtrace
+// resolves to exactly these functions and source lines, so moving them requires updating
+// the expected line numbers in that test.
+async fn foo() -> Result<()> {
+    bar().await
+}
+
+async fn bar() -> Result<()> {
+    baz().await
+}
+
+async fn baz() -> Result<()> {
+    quux().await
+}
+
+async fn quux() -> Result<()> {
+    Err(ErrorVariant::PollingPeriodZero.into())
 }
 
 impl Drop for Device {

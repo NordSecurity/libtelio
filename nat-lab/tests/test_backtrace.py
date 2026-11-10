@@ -5,14 +5,30 @@ from pathlib import PureWindowsPath
 from tests.helpers import SetupParameters, Environment
 from tests.libtelio_client import Client
 from tests.uniffi.libtelio_proxy import BacktraceLocation, LibtelioError
-from tests.utils.connection import ConnectionTag
-from tests.utils.debug_symbols import libtelio_debug_files, resolve_return_addresses
-from typing import Awaitable, Callable, List
+from tests.utils.connection import ConnectionTag, TargetOS
+from tests.utils.debug_symbols import (
+    ResolvedFunction,
+    libtelio_debug_files,
+    resolve_return_addresses,
+)
+from typing import Awaitable, Callable, Dict, List, Optional
 
-STACK_PANIC_LOG = r"panicked at src.ffi\.rs"
 LIBTELIO_MODULES = {"libtelio.so", "libtelio.dylib", "telio.dll"}
 RELEASE_PROFILE = "release"
-ERROR_SOURCE_FILE = "ffi.rs"
+
+
+@dataclass(frozen=True)
+class ExpectedFrame:
+    function: str
+    # Line the frame must resolve to, None = only function name and file are verified.
+    line: Optional[int] = None
+    # Per-OS line overrides, for toolchains that attribute the frame to a different line.
+    os_lines: Optional[Dict[TargetOS, int]] = None
+
+    def line_for(self, target_os: TargetOS) -> Optional[int]:
+        if self.os_lines and target_os in self.os_lines:
+            return self.os_lines[target_os]
+        return self.line
 
 
 @dataclass(frozen=True)
@@ -20,34 +36,55 @@ class ErrorSource:
     trigger: Callable[[Client], Awaitable[None]]
     message: str
     allowed_errors: List[str]
-    calls_innermost_first: List[str]
+    calls_innermost_first: List[ExpectedFrame]
+    file_name: str
 
 
 STACK_PANIC = ErrorSource(
     trigger=lambda client: client.generate_stack_panic(),
     message="runtime_panic_test_call_stack",
-    allowed_errors=[STACK_PANIC_LOG],
-    calls_innermost_first=["TelioError", "catch_ffi_panic", "generate_stack_panic"],
+    allowed_errors=[r"panicked at src.ffi\.rs"],
+    calls_innermost_first=[
+        ExpectedFrame("TelioError"),
+        ExpectedFrame("catch_ffi_panic", 109, {TargetOS.Windows: 112}),
+        ExpectedFrame("generate_stack_panic", 1116),
+    ],
+    file_name="ffi.rs",
 )
 
 GENERATED_ERROR = ErrorSource(
-    trigger=lambda client: client.generate_error(),
+    trigger=lambda client: client.generate_error(False),
     message="generated_error_test_call_stack",
     allowed_errors=[],
     calls_innermost_first=[
-        "TelioError",
-        "quux",
-        "baz",
-        "bar",
-        "foo",
-        "catch_ffi_panic",
-        "generate_error",
+        ExpectedFrame("TelioError"),
+        ExpectedFrame("quux", 1173),
+        ExpectedFrame("baz", 1169),
+        ExpectedFrame("bar", 1165),
+        ExpectedFrame("foo", 1161),
+        ExpectedFrame("catch_ffi_panic", 95, {TargetOS.Windows: 102}),
+        ExpectedFrame("generate_error", 1155, {TargetOS.Windows: 1148}),
     ],
+    file_name="ffi.rs",
+)
+
+GENERATED_ASYNC_ERROR = ErrorSource(
+    trigger=lambda client: client.generate_error(True),
+    message="UnknownError: PollingPeriodZero",
+    allowed_errors=[],
+    calls_innermost_first=[
+        ExpectedFrame("quux", 1042, {TargetOS.Windows: 1043}),
+        ExpectedFrame("baz", 1038),
+        ExpectedFrame("bar", 1034),
+        ExpectedFrame("foo", 1030),
+    ],
+    file_name="device.rs",
 )
 
 ERROR_SOURCES = [
     pytest.param(STACK_PANIC, id="stack_panic"),
     pytest.param(GENERATED_ERROR, id="generated_error"),
+    pytest.param(GENERATED_ASYNC_ERROR, id="generated_async_error"),
 ]
 
 SETUP_PARAMS = [
@@ -87,9 +124,31 @@ def libtelio_frames(error: LibtelioError) -> List[BacktraceLocation]:
     ]
 
 
-def calls_in_order(expected: List[str], functions: List[str]) -> bool:
+def verify_calls_in_order(
+    source: ErrorSource, functions: List[ResolvedFunction], target_os: TargetOS
+) -> None:
     remaining = iter(functions)
-    return all(any(name in function for function in remaining) for name in expected)
+    for frame in source.calls_innermost_first:
+        resolved = next(
+            (
+                function
+                for function in remaining
+                if frame.function in function.function
+                and PureWindowsPath(function.file).name == source.file_name
+            ),
+            None,
+        )
+
+        assert (
+            resolved is not None
+        ), f"{frame.function} ({source.file_name}) not found in order in: {functions}"
+        expected_line = frame.line_for(target_os)
+        if expected_line is not None:
+            assert resolved.line == expected_line, (
+                f"{frame.function}: expected {source.file_name}:{expected_line} "
+                f"({target_os.name}), "
+                f"got {resolved.file}:{resolved.line}"
+            )
 
 
 @pytest.mark.skipif(
@@ -109,16 +168,10 @@ async def test_error_backtrace_resolves(
     assert frames, f"no libtelio frame in backtrace: {error.backtrace}"
     addresses = [frame.address for frame in frames if frame.address is not None]
     assert len(addresses) == len(frames), f"libtelio frames without address: {frames}"
-    library, debug = libtelio_debug_files(client.get_connection().target_os)
+    target_os = client.get_connection().target_os
+    library, debug = libtelio_debug_files(target_os)
 
     resolved = await resolve_return_addresses(library, debug, addresses)
 
     assert {frame.module_id for frame in frames} == {resolved.module_id}
-    error_source_functions = [
-        function.function
-        for function in resolved.functions
-        if PureWindowsPath(function.file).name == ERROR_SOURCE_FILE
-    ]
-    assert calls_in_order(
-        error_source.calls_innermost_first, error_source_functions
-    ), f"unexpected functions in backtrace: {resolved.functions}"
+    verify_calls_in_order(error_source, resolved.functions, target_os)

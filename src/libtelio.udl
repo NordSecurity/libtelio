@@ -642,7 +642,7 @@ interface Telio {
 
     /// For testing only. Returns an error created by a chain of nested calls.
     [Throws=TelioError]
-    void generate_error();
+    void generate_error(boolean from_async);
 };
 
 callback interface TelioEventCb {
