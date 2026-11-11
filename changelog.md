@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v8.1.1
+### ****
+---
+* LLT-7892: Fix version tag padded with NULs after version insertion, which broke meshnet connections
+
+<br>
+
 ### v8.0.2
 ### ****
 ---
