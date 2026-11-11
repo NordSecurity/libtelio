@@ -195,12 +195,23 @@ Markers are defined in [pyproject.toml](pyproject.toml). Useful ones:
 - ipv4 / ipv6 / ipv4v6
 - utils
 - libfirewall   requires `libfirewall.so` (see below)
+- openwrt       requires OpenWrt VMs and locally built packages (see below)
 
 ### libfirewall tests
 
 Tests marked `libfirewall` depend on `tests/uniffi/libfirewall.so` being present. Without it, the firewall is a no-op and these tests are automatically skipped at collection time.
 
 In CI, `libfirewall.so` is downloaded and placed at `nat-lab/tests/uniffi/libfirewall.so` before tests run. For local runs, obtain the `.so` from the internal artifact registry and place it at that path manually.
+
+### OpenWrt tests
+
+In CI, nordvpnlite is installed on the OpenWrt VMs from the package feed served by `openwrt-cdn`.
+For local runs the feed is skipped and the package is installed directly from `dist/openwrt/<profile>/<arch>/`: `x86_64/*.apk` for `openwrt-gw-01` and `mipsel/*.ipk` for `openwrt-gw-03`.
+The host needs `/dev/kvm`.
+
+```bash
+uv run python3 run_local.py --openwrt
+```
 
 ### To include a marker
 
