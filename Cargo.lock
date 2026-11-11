@@ -2682,7 +2682,7 @@ dependencies = [
 [[package]]
 name = "neptun"
 version = "2.2.3"
-source = "git+https://github.com/NordSecurity/neptun.git?tag=v3.0.6#ce185155e1639403cc40e01260d0830065a49555"
+source = "git+https://github.com/NordSecurity/neptun.git?branch=LLT-7891_remove_socckets_from_protector#60baef1dd5e450d438a8ce10e83f57c6b13a1eaf"
 dependencies = [
  "aead",
  "base64 0.22.1",
