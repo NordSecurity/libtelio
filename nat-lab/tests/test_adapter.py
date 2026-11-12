@@ -18,6 +18,7 @@ from tests.utils.connection_util import (
     generate_connection_tracker_config,
     ConnectionManager,
 )
+from tests.utils.logger import log
 from tests.utils.process import ProcessExecError
 from tests.utils.python import get_python_binary
 from typing import Awaitable, Callable, List
@@ -31,8 +32,11 @@ class AdapterState(Enum):
 MTU_POLL_ATTEMPTS = 20
 MTU_POLL_INTERVAL_S = 0.5
 
+STATE_TIMEOUT_S = 20
+STATE_POLL_INTERVAL_S = 0.5
 
-async def get_interface_state(client_conn, client):
+
+async def get_interface_state(client_conn, client) -> AdapterState | None:
     itf_name = client.get_router().get_interface_name()
     process = await client_conn.create_process([
         "powershell",
@@ -42,12 +46,37 @@ async def get_interface_state(client_conn, client):
     output = process.get_stdout()
     state_str = output.strip().lower()
 
+    if not state_str:
+        # Adapter not present, e.g. while PnP removes and re-adds the device
+        return None
     if state_str in ("disconnected", "down"):
         return AdapterState.DOWN
     if state_str in ("connected", "up"):
         return AdapterState.UP
 
     raise RuntimeError(f'Unexpected adapter state: "{output}"')
+
+
+async def wait_for_interface_state(client_conn, client, expected: AdapterState) -> None:
+    actual: AdapterState | None = None
+    # Single timeout for the whole wait, also bounds a hanging read
+    state_timeout = asyncio.timeout(STATE_TIMEOUT_S)
+
+    try:
+        async with state_timeout:
+            while True:
+                actual = await get_interface_state(client_conn, client)
+                if actual == expected:
+                    return
+                log.debug("Adapter state: expected %s, got %s", expected, actual)
+                await asyncio.sleep(STATE_POLL_INTERVAL_S)
+    except TimeoutError:
+        if not state_timeout.expired():
+            raise
+        raise AssertionError(
+            f"Adapter did not reach state {expected} within {STATE_TIMEOUT_S} s,"
+            f" last read {actual}"
+        ) from None
 
 
 async def get_interface_mtu(client_conn, client, address_family: str) -> int:
@@ -283,18 +312,15 @@ class TestAdapterStateForVpnAndDns:
             else AdapterState.UP
         )
 
-        actual_state = await get_interface_state(client_conn, client_alpha)
-        assert actual_state == expected_idle_state
+        await wait_for_interface_state(client_conn, client_alpha, expected_idle_state)
 
         await client_alpha.enable_magic_dns(["1.2.3.4"])
 
-        state = await get_interface_state(client_conn, client_alpha)
-        assert state == AdapterState.UP
+        await wait_for_interface_state(client_conn, client_alpha, AdapterState.UP)
 
         await client_alpha.disable_magic_dns()
 
-        state = await get_interface_state(client_conn, client_alpha)
-        assert state == expected_idle_state
+        await wait_for_interface_state(client_conn, client_alpha, expected_idle_state)
 
         # attempt to connect to VPN
         server_ip = config.WG_SERVER["ipv4"]
@@ -307,13 +333,11 @@ class TestAdapterStateForVpnAndDns:
         )
         await client_alpha.vpn.connect(server_ip, server_port, server_public_key)
 
-        state = await get_interface_state(client_conn, client_alpha)
-        assert state == AdapterState.UP
+        await wait_for_interface_state(client_conn, client_alpha, AdapterState.UP)
 
         await client_alpha.vpn.disconnect(server_public_key)
 
-        state = await get_interface_state(client_conn, client_alpha)
-        assert state == expected_idle_state
+        await wait_for_interface_state(client_conn, client_alpha, expected_idle_state)
 
     @pytest.mark.parametrize(
         "alpha_setup_params",
@@ -351,8 +375,7 @@ class TestAdapterStateForVpnAndDns:
 
         await client_alpha.vpn.connect(server_ip, server_port, server_public_key)
 
-        state = await get_interface_state(client_conn, client_alpha)
-        assert state == AdapterState.UP
+        await wait_for_interface_state(client_conn, client_alpha, AdapterState.UP)
 
         ports = re.findall(r"listen_port: Some\((\d+)\)", await client_alpha.log.get())
         assert ports, "listen_port not found in libtelio log"
@@ -361,8 +384,7 @@ class TestAdapterStateForVpnAndDns:
 
         await client_alpha.vpn.disconnect(server_public_key)
 
-        state = await get_interface_state(client_conn, client_alpha)
-        assert state == AdapterState.DOWN
+        await wait_for_interface_state(client_conn, client_alpha, AdapterState.DOWN)
 
         # TODO: LLT-5689 - rewrite with the NetCat wrapper once it supports Windows
         occupy_port_cmd = [
@@ -383,8 +405,7 @@ class TestAdapterStateForVpnAndDns:
                 server_ip, server_port, server_public_key, timeout=40
             )
 
-            state = await get_interface_state(client_conn, client_alpha)
-            assert state == AdapterState.UP
+            await wait_for_interface_state(client_conn, client_alpha, AdapterState.UP)
 
     @pytest.mark.parametrize(
         "alpha_setup_params",
@@ -434,12 +455,10 @@ class TestAdapterStateForVpnAndDns:
         )
 
         # If meshnet is enabled without any peers, adapter should still be Up
-        state = await get_interface_state(client_conn, client_alpha)
-        assert state == AdapterState.UP
+        await wait_for_interface_state(client_conn, client_alpha, AdapterState.UP)
 
         await client_alpha.set_mesh_off()
-        state = await get_interface_state(client_conn, client_alpha)
-        assert state == expected_idle_state
+        await wait_for_interface_state(client_conn, client_alpha, expected_idle_state)
 
         # Add node to meshnet, adapter should go UP
         api.default_config_two_nodes()
@@ -448,8 +467,7 @@ class TestAdapterStateForVpnAndDns:
             first_node_id, derp_servers=[config.DERP_PRIMARY]
         )
         await client_alpha.set_meshnet_config(mesh_config)
-        state = await get_interface_state(client_conn, client_alpha)
-        assert state == AdapterState.UP
+        await wait_for_interface_state(client_conn, client_alpha, AdapterState.UP)
 
         # Connect to VPN
         server_ip = config.WG_SERVER["ipv4"]
@@ -461,16 +479,13 @@ class TestAdapterStateForVpnAndDns:
             and isinstance(server_public_key, str)
         )
         await client_alpha.vpn.connect(server_ip, server_port, server_public_key)
-        state = await get_interface_state(client_conn, client_alpha)
-        assert state == AdapterState.UP
+        await wait_for_interface_state(client_conn, client_alpha, AdapterState.UP)
 
         await client_alpha.set_mesh_off()
-        state = await get_interface_state(client_conn, client_alpha)
-        assert state == AdapterState.UP
+        await wait_for_interface_state(client_conn, client_alpha, AdapterState.UP)
 
         await client_alpha.vpn.disconnect(server_public_key)
-        state = await get_interface_state(client_conn, client_alpha)
-        assert state == expected_idle_state
+        await wait_for_interface_state(client_conn, client_alpha, expected_idle_state)
 
 
 @pytest.mark.parametrize(
@@ -518,12 +533,10 @@ async def test_adapter_state_for_meshnet(
     )
 
     # If meshnet is enabled without any peers, adapter should still be Up
-    state = await get_interface_state(client_conn, client_alpha)
-    assert state == AdapterState.UP
+    await wait_for_interface_state(client_conn, client_alpha, AdapterState.UP)
 
     await client_alpha.set_mesh_off()
-    state = await get_interface_state(client_conn, client_alpha)
-    assert state == expected_idle_state
+    await wait_for_interface_state(client_conn, client_alpha, expected_idle_state)
 
     # Add node to meshnet, adapter should go UP
     api.default_config_two_nodes()
@@ -532,22 +545,18 @@ async def test_adapter_state_for_meshnet(
         first_node_id, derp_servers=[config.DERP_PRIMARY]
     )
     await client_alpha.set_meshnet_config(mesh_config)
-    state = await get_interface_state(client_conn, client_alpha)
-    assert state == AdapterState.UP
+    await wait_for_interface_state(client_conn, client_alpha, AdapterState.UP)
 
     await client_alpha.set_mesh_off()
-    state = await get_interface_state(client_conn, client_alpha)
-    assert state == expected_idle_state
+    await wait_for_interface_state(client_conn, client_alpha, expected_idle_state)
 
     # Mesh with config, but without peers, adapter should be UP
     mesh_config.peers = None
     await client_alpha.set_meshnet_config(mesh_config)
-    state = await get_interface_state(client_conn, client_alpha)
-    assert state == AdapterState.UP
+    await wait_for_interface_state(client_conn, client_alpha, AdapterState.UP)
 
     await client_alpha.set_mesh_off()
-    state = await get_interface_state(client_conn, client_alpha)
-    assert state == expected_idle_state
+    await wait_for_interface_state(client_conn, client_alpha, expected_idle_state)
 
 
 @pytest.mark.windows
@@ -637,8 +646,7 @@ class TestAdapterMtuWithDynamicWgNtControl:
         client_alpha, *_ = env.clients
         expected_mtu = 1340
 
-        state = await get_interface_state(client_conn, client_alpha)
-        assert state == AdapterState.DOWN
+        await wait_for_interface_state(client_conn, client_alpha, AdapterState.DOWN)
 
         await client_alpha.set_adapter_mtu(expected_mtu)
         await wait_for_interface_mtu(client_conn, client_alpha, expected_mtu)
@@ -653,14 +661,12 @@ class TestAdapterMtuWithDynamicWgNtControl:
         )
         await client_alpha.vpn.connect(server_ip, server_port, server_public_key)
 
-        state = await get_interface_state(client_conn, client_alpha)
-        assert state == AdapterState.UP
+        await wait_for_interface_state(client_conn, client_alpha, AdapterState.UP)
         await wait_for_interface_mtu(client_conn, client_alpha, expected_mtu)
 
         await client_alpha.vpn.disconnect(server_public_key)
 
-        state = await get_interface_state(client_conn, client_alpha)
-        assert state == AdapterState.DOWN
+        await wait_for_interface_state(client_conn, client_alpha, AdapterState.DOWN)
         await wait_for_interface_mtu(client_conn, client_alpha, expected_mtu)
 
 
