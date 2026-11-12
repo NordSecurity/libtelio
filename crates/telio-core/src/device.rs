@@ -239,6 +239,16 @@ telio_utils::traced_error! {
     }
 }
 
+impl ErrorVariant {
+    pub(crate) fn is_duplicate_allowed_ips(&self) -> bool {
+        match self {
+            Self::ControllerError(wg_controller::Error::BadAllowedIps) => true,
+            Self::Adapter(e) => matches!(e.variant(), wg::ErrorVariant::DuplicateAllowedIPsError),
+            _ => false,
+        }
+    }
+}
+
 pub type Result<T = ()> = std::result::Result<T, Error>;
 
 pub trait EventCb: Fn(Box<Event>) + Send + 'static {}
@@ -635,7 +645,7 @@ impl Device {
 
     pub fn external_nodes(&self) -> Result<Vec<Node>> {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |s| Ok(s.external_nodes().await)).await?
+            task_exec!(self.rt()?, async move |s| s.external_nodes().await).await?
         })
     }
 
@@ -688,7 +698,7 @@ impl Device {
     pub fn get_adapter_luid(&mut self) -> u64 {
         if let Some(art) = &self.async_runtime {
             let res: Result<u64> = art.block_on(async {
-                task_exec!(self.rt()?, async move |rt| Ok(rt.get_adapter_luid().await)).await?
+                task_exec!(self.rt()?, async move |rt| rt.get_adapter_luid().await).await?
             });
             res.unwrap_or(0)
         } else {
@@ -720,7 +730,7 @@ impl Device {
         let private_key = private_key.clone(); //Going into async context, therefore just copy for lifetimes
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.set_private_key(&private_key).boxed().await)
+                rt.set_private_key(&private_key).boxed().await
             })
             .await?
         })
@@ -731,7 +741,7 @@ impl Device {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
                 let _guard = rt.entities.network_monitor.pause();
-                Ok(rt.set_tun(tun).boxed().await)
+                rt.set_tun(tun).boxed().await
             })
             .await?
         })
@@ -745,7 +755,7 @@ impl Device {
     pub fn set_ext_if_filter(&self, ext_if_filter: Vec<String>) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.set_ext_if_filter(ext_if_filter).boxed().await)
+                rt.set_ext_if_filter(ext_if_filter).boxed().await
             })
             .await?
         })
@@ -755,7 +765,7 @@ impl Device {
     pub fn set_adapter_mtu(&self, mtu: Option<u32>) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.set_adapter_mtu(mtu).boxed().await)
+                rt.set_adapter_mtu(mtu).boxed().await
             })
             .await?
         })
@@ -764,7 +774,7 @@ impl Device {
     /// Retrieves currently configured private key for the interface
     pub fn get_private_key(&self) -> Result<SecretKey> {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt.get_private_key().await)).await?
+            task_exec!(self.rt()?, async move |rt| rt.get_private_key().await).await?
         })
     }
 
@@ -773,10 +783,9 @@ impl Device {
     #[cfg_attr(docsrs, doc(cfg(target_os = "linux")))]
     pub fn set_fwmark(&self, fwmark: u32) -> Result {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt
-                .set_fwmark(fwmark)
-                .boxed()
-                .await))
+            task_exec!(self.rt()?, async move |rt| {
+                rt.set_fwmark(fwmark).boxed().await
+            })
             .await?
         })
     }
@@ -787,10 +796,9 @@ impl Device {
     pub fn set_config(&self, config: &Option<Config>) -> Result {
         let config = config.clone();
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt
-                .set_config(&config)
-                .boxed()
-                .await))
+            task_exec!(self.rt()?, async move |rt| {
+                rt.set_config(&config).boxed().await
+            })
             .await?
         })
     }
@@ -808,7 +816,7 @@ impl Device {
     ) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.enable_tp_lite_stats_collection(config, collect_stats_cb))
+                rt.enable_tp_lite_stats_collection(config, collect_stats_cb)
             })
             .await?
         })
@@ -818,7 +826,7 @@ impl Device {
     pub fn disable_tp_lite_stats_collection(&self) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.disable_tp_lite_stats_collection())
+                rt.disable_tp_lite_stats_collection()
             })
             .await?
         })
@@ -837,7 +845,7 @@ impl Device {
     ) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.set_tp_lite_domain_whitelist(domains, redirects).await)
+                rt.set_tp_lite_domain_whitelist(domains, redirects).await
             })
             .await?
         })
@@ -851,7 +859,7 @@ impl Device {
     pub fn notify_network_change(&self) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.notify_network_change().await)
+                rt.notify_network_change().await
             })
             .await?
         })
@@ -860,7 +868,7 @@ impl Device {
     pub fn set_tunnel_src_ip(&self, src_ips: Vec<IpAddr>) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.set_tunnel_src_ip(src_ips).await)
+                rt.set_tunnel_src_ip(src_ips).await
             })
             .await?
         })
@@ -868,13 +876,13 @@ impl Device {
 
     pub fn notify_sleep(&self) -> Result {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt.notify_sleep().await)).await?
+            task_exec!(self.rt()?, async move |rt| rt.notify_sleep().await).await?
         })
     }
 
     pub fn notify_wakeup(&self) -> Result {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt.notify_wakeup().await)).await?
+            task_exec!(self.rt()?, async move |rt| rt.notify_wakeup().await).await?
         })
     }
 
@@ -885,13 +893,10 @@ impl Device {
     /// the specified (matched by public key) meshnet node is "promoted" to be the exit node
     pub fn connect_exit_node(&self, config: Arc<ConnectionConfig>) -> Result {
         self.async_runtime()?.block_on(async {
-            let _wireguard_interface: Arc<DynamicWg> = task_exec!(self.rt()?, async move |rt| {
-                rt.connect_exit_node(config).boxed().await?;
-                Ok(rt.entities.wireguard_interface.clone())
+            task_exec!(self.rt()?, async move |rt| {
+                rt.connect_exit_node(config).boxed().await
             })
-            .await?;
-
-            Ok(())
+            .await?
         })
     }
 
@@ -903,13 +908,10 @@ impl Device {
     /// this call will error out.
     pub fn connect_vpn_post_quantum(&self, config: Arc<ConnectionConfig>) -> Result {
         self.async_runtime()?.block_on(async {
-            let _wireguard_interface: Arc<DynamicWg> = task_exec!(self.rt()?, async move |rt| {
-                rt.connect_exit_node_pq(config).boxed().await?;
-                Ok(rt.entities.wireguard_interface.clone())
+            task_exec!(self.rt()?, async move |rt| {
+                rt.connect_exit_node_pq(config).boxed().await
             })
-            .await?;
-
-            Ok(())
+            .await?
         })
     }
 
@@ -920,7 +922,7 @@ impl Device {
         self.async_runtime()?.block_on(async {
             let node_key = *node_key;
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.disconnect_exit_node(&node_key).boxed().await)
+                rt.disconnect_exit_node(&node_key).boxed().await
             })
             .await?
         })
@@ -931,7 +933,7 @@ impl Device {
     pub fn disconnect_exit_nodes(&self) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.disconnect_exit_nodes().boxed().await)
+                rt.disconnect_exit_nodes().boxed().await
             })
             .await?
         })
@@ -959,7 +961,7 @@ impl Device {
         self.async_runtime()?.block_on(async {
             let upstream_servers = upstream_servers.to_vec();
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.start_dns(&upstream_servers).boxed().await)
+                rt.start_dns(&upstream_servers).boxed().await
             })
             .await?
         })
@@ -970,7 +972,7 @@ impl Device {
     /// Undoes the effects of `device::enable_magic_dns()` call
     pub fn disable_magic_dns(&self) -> Result {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt.stop_dns().boxed().await)).await?
+            task_exec!(self.rt()?, async move |rt| rt.stop_dns().boxed().await).await?
         })
     }
 
@@ -978,41 +980,40 @@ impl Device {
     ///
     /// Used only for testing purposes
     pub fn _panic(&self) -> Result {
-        self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt._panic().await)).await?
-        })
+        self.async_runtime()?
+            .block_on(async { task_exec!(self.rt()?, async move |rt| rt._panic().await).await? })
     }
 
     /// Retrieves a reference to SocketPool. Use this instead of SocketPool::default() when possible
     pub fn get_socket_pool(&self) -> Result<Arc<SocketPool>> {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt.get_socket_pool().await)).await?
+            task_exec!(self.rt()?, async move |rt| rt.get_socket_pool().await).await?
         })
     }
 
     pub fn trigger_analytics_event(&self) -> Result<()> {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt
-                .trigger_analytics_event()
-                .await))
+            task_exec!(self.rt()?, async move |rt| {
+                rt.trigger_analytics_event().await
+            })
             .await?
         })
     }
 
     pub fn trigger_qos_collection(&self) -> Result<()> {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt
-                .trigger_qos_collection()
-                .await))
+            task_exec!(self.rt()?, async move |rt| {
+                rt.trigger_qos_collection().await
+            })
             .await?
         })
     }
 
     pub fn receive_ping(&self) -> Result<String> {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(
+            task_exec!(self.rt()?, async move |rt| {
                 Box::pin(rt.receive_ping()).await
-            ))
+            })
             .await?
         })
     }
@@ -3123,8 +3124,10 @@ fn convert_connection_error(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ipnet::IpNet;
     use rstest::*;
-    use std::net::Ipv6Addr;
+    use std::collections::BTreeMap;
+    use std::net::{Ipv6Addr, SocketAddr};
     use telio_model::config::{Peer, PeerBase};
     use telio_model::features::FeatureDirect;
     use telio_model::mesh::VpnConnectionError;
@@ -3163,6 +3166,30 @@ mod tests {
             peers,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn duplicate_allowed_ips_map_to_bad_config() {
+        use crate::types::TelioErrorVariant;
+
+        let from_adapter: Error =
+            AdapterError::from(wg::ErrorVariant::DuplicateAllowedIPsError).into();
+        let from_controller: Error = wg_controller::Error::BadAllowedIps.into();
+        let other_adapter_error: Error =
+            AdapterError::from(wg::ErrorVariant::UnsupportedAdapter).into();
+
+        assert!(matches!(
+            TelioErrorVariant::from(from_adapter.variant()),
+            TelioErrorVariant::BadConfig
+        ));
+        assert!(matches!(
+            TelioErrorVariant::from(from_controller.variant()),
+            TelioErrorVariant::BadConfig
+        ));
+        assert!(!matches!(
+            TelioErrorVariant::from(other_adapter_error.variant()),
+            TelioErrorVariant::BadConfig
+        ));
     }
 
     #[test]
@@ -3745,6 +3772,233 @@ mod tests {
         assert!(rt.disconnect_exit_node(&pubkey).await.is_ok());
         assert!(rt.requested_state.exit_node.is_none());
         rt.test_env.adapter.lock().await.checkpoint();
+    }
+
+    const MESHNET_OWN_IP: Ipv4Addr = Ipv4Addr::new(100, 64, 0, 1);
+    const MESHNET_FIRST_IP: Ipv4Addr = Ipv4Addr::new(100, 64, 0, 2);
+    const MESHNET_SECOND_IP: Ipv4Addr = Ipv4Addr::new(100, 64, 0, 3);
+    const WG_LISTEN_PORT: u16 = 1234;
+
+    fn meshnet_config_with_peers(
+        own_key: PublicKey,
+        peers: &[(PublicKey, Ipv4Addr)],
+    ) -> Option<Config> {
+        let peer_base = |public_key, ip: Ipv4Addr| PeerBase {
+            identifier: ip.to_string(),
+            public_key,
+            hostname: telio_utils::Hidden(ip.to_string()),
+            ip_addresses: Some(vec![IpAddr::V4(ip)]),
+            nickname: None,
+        };
+
+        Some(Config {
+            this: peer_base(own_key, MESHNET_OWN_IP),
+            peers: Some(
+                peers
+                    .iter()
+                    .map(|(public_key, ip)| Peer {
+                        base: peer_base(*public_key, *ip),
+                        ..Default::default()
+                    })
+                    .collect(),
+            ),
+            derp_servers: None,
+            dns: None,
+        })
+    }
+
+    async fn start_runtime_with_listen_port(private_key: &SecretKey) -> Runtime {
+        let (sender, _receiver) = tokio::sync::broadcast::channel(1);
+        let rt = Runtime::start(
+            sender,
+            DeviceConfig {
+                private_key: private_key.clone(),
+                ..Default::default()
+            },
+            Features::default(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        rt.entities
+            .wireguard_interface
+            .set_listen_port(WG_LISTEN_PORT)
+            .await
+            .unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        rt
+    }
+
+    async fn allowed_ips_by_peer(rt: &Runtime) -> BTreeMap<PublicKey, Vec<IpNet>> {
+        rt.entities
+            .wireguard_interface
+            .get_interface()
+            .await
+            .unwrap()
+            .peers
+            .into_iter()
+            .map(|(public_key, peer)| (public_key, peer.allowed_ips))
+            .collect()
+    }
+
+    fn meshnet_allowed_ips(ip: Ipv4Addr) -> Vec<IpNet> {
+        vec![IpNet::from(IpAddr::V4(ip))]
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test(start_paused = true)]
+    async fn test_exit_node_switch_from_meshnet_peer_to_vpn() {
+        let private_key = SecretKey::gen();
+        let mut rt = start_runtime_with_listen_port(&private_key).await;
+        let meshnet_peer = SecretKey::gen().public();
+        let vpn_server = SecretKey::gen().public();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        rt.set_config(&meshnet_config_with_peers(
+            private_key.public(),
+            &[(meshnet_peer, MESHNET_FIRST_IP)],
+        ))
+        .await
+        .unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        rt.connect_exit_node(
+            Arc::new(crate::connection_config::MeshnetConnectionConfigBuilder::new(meshnet_peer))
+                .build(),
+        )
+        .await
+        .unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(2)
+            .await;
+        rt.connect_exit_node(
+            Arc::new(crate::connection_config::VpnConnectionConfigBuilder::new(
+                vpn_server,
+                SocketAddr::from(([1, 2, 3, 4], WG_LISTEN_PORT)),
+            ))
+            .build(),
+        )
+        .await
+        .unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        assert_eq!(
+            allowed_ips_by_peer(&rt).await,
+            BTreeMap::from([
+                (meshnet_peer, meshnet_allowed_ips(MESHNET_FIRST_IP)),
+                (
+                    vpn_server,
+                    vec![IpNet::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0).unwrap()]
+                ),
+            ])
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test(start_paused = true)]
+    async fn test_meshnet_ip_moved_to_new_peer() {
+        let private_key = SecretKey::gen();
+        let mut rt = start_runtime_with_listen_port(&private_key).await;
+        let existing_peer = SecretKey::gen().public();
+        let new_peer = SecretKey::gen().public();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        rt.set_config(&meshnet_config_with_peers(
+            private_key.public(),
+            &[(existing_peer, MESHNET_FIRST_IP)],
+        ))
+        .await
+        .unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(2)
+            .await;
+        rt.set_config(&meshnet_config_with_peers(
+            private_key.public(),
+            &[
+                (existing_peer, MESHNET_SECOND_IP),
+                (new_peer, MESHNET_FIRST_IP),
+            ],
+        ))
+        .await
+        .unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        assert_eq!(
+            allowed_ips_by_peer(&rt).await,
+            BTreeMap::from([
+                (existing_peer, meshnet_allowed_ips(MESHNET_SECOND_IP)),
+                (new_peer, meshnet_allowed_ips(MESHNET_FIRST_IP)),
+            ])
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test(start_paused = true)]
+    async fn test_meshnet_ips_swapped_between_peers() {
+        let private_key = SecretKey::gen();
+        let mut rt = start_runtime_with_listen_port(&private_key).await;
+        let first_peer = SecretKey::gen().public();
+        let second_peer = SecretKey::gen().public();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(2)
+            .await;
+        rt.set_config(&meshnet_config_with_peers(
+            private_key.public(),
+            &[
+                (first_peer, MESHNET_FIRST_IP),
+                (second_peer, MESHNET_SECOND_IP),
+            ],
+        ))
+        .await
+        .unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(4)
+            .await;
+        rt.set_config(&meshnet_config_with_peers(
+            private_key.public(),
+            &[
+                (first_peer, MESHNET_SECOND_IP),
+                (second_peer, MESHNET_FIRST_IP),
+            ],
+        ))
+        .await
+        .unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        assert_eq!(
+            allowed_ips_by_peer(&rt).await,
+            BTreeMap::from([
+                (first_peer, meshnet_allowed_ips(MESHNET_SECOND_IP)),
+                (second_peer, meshnet_allowed_ips(MESHNET_FIRST_IP)),
+            ])
+        );
     }
 
     #[cfg(not(windows))]

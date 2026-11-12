@@ -104,6 +104,7 @@ impl From<&DevErrorVariant> for TelioErrorVariant {
         match err {
             DevErrorVariant::AlreadyStarted => Self::AlreadyStarted,
             DevErrorVariant::BadPublicKey => Self::InvalidKey,
+            _ if err.is_duplicate_allowed_ips() => Self::BadConfig,
             _ => Self::UnknownError {
                 inner: format!("{err:?}"),
             },

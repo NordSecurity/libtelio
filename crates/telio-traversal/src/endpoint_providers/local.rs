@@ -49,7 +49,6 @@ impl<T: WireGuard, G: GetIfAddrs> EndpointProvider for LocalInterfacesEndpointPr
     async fn subscribe_for_pong_events(&self, tx: chan::Tx<PongEvent>) {
         task_exec!(&self.task, async move |s| {
             s.pong_publisher = Some(tx);
-            Ok(())
         })
         .await
         .unwrap_or_default();
@@ -61,7 +60,6 @@ impl<T: WireGuard, G: GetIfAddrs> EndpointProvider for LocalInterfacesEndpointPr
     ) {
         task_exec!(&self.task, async move |s| {
             s.endpoint_candidates_change_publisher = Some(tx);
-            Ok(())
         })
         .await
         .unwrap_or_default();
@@ -69,7 +67,7 @@ impl<T: WireGuard, G: GetIfAddrs> EndpointProvider for LocalInterfacesEndpointPr
 
     async fn trigger_endpoint_candidates_discovery(&self, _force: bool) -> Result<(), Error> {
         task_exec!(&self.task, async move |s| {
-            Ok(s.poll_local_endpoints().await)
+            s.poll_local_endpoints().await
         })
         .await?
     }
@@ -83,17 +81,17 @@ impl<T: WireGuard, G: GetIfAddrs> EndpointProvider for LocalInterfacesEndpointPr
         public_key: PublicKey,
     ) -> Result<(), Error> {
         task_exec!(&self.task, async move |s| {
-            Ok(s.send_ping(addr, session_id, &public_key).await)
+            s.send_ping(addr, session_id, &public_key).await
         })
         .await?
     }
 
     async fn get_current_endpoints(&self) -> Option<Vec<EndpointCandidate>> {
-        task_exec!(&self.task, async move |s| Ok(Some(
+        task_exec!(&self.task, async move |s| {
             s.last_endpoint_candidates_event.clone()
-        )))
+        })
         .await
-        .unwrap_or(None)
+        .ok()
     }
 }
 

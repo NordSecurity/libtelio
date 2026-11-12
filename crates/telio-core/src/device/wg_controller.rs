@@ -446,6 +446,12 @@ async fn consolidate_wg_peers<
         }
     }
 
+    let released_peers = peers_releasing_allowed_ips(&requested_peers, &actual_peers);
+    for peer in released_peers.values() {
+        telio_log_info!("Releasing allowed IPs moved to another peer: {:?}", peer);
+        wireguard_interface.add_peer(peer.clone()).await?;
+    }
+
     for key in insert_keys {
         telio_log_info!("Inserting peer: {:?}", requested_peers.get(key));
         let peer = requested_peers.get(key).ok_or(Error::PeerNotFound)?;
@@ -466,7 +472,8 @@ async fn consolidate_wg_peers<
         let actual_peer = actual_peers.get(key).ok_or(Error::PeerNotFound)?;
 
         // Check if anything of importance has changed and update if needed
-        if !compare_peers(&requested_peer.peer, actual_peer) {
+        let pushed_peer = released_peers.get(key).unwrap_or(actual_peer);
+        if !compare_peers(&requested_peer.peer, pushed_peer) {
             // Update peer
             telio_log_info!(
                 "Peer updated: {:?} -> {:?}",
@@ -572,6 +579,58 @@ async fn consolidate_wg_peers<
     }
 
     Ok(())
+}
+
+/// WireGuard rejects a peer whose allowed IP is still held by another peer, so an allowed IP can
+/// only move once its current owner gave it up. Returns the peers which lose an allowed IP to
+/// another peer, in the form they can be pushed right away: as requested, but without the
+/// allowed IPs which other peers did not give up yet.
+fn peers_releasing_allowed_ips(
+    requested_peers: &BTreeMap<PublicKey, RequestedPeer>,
+    actual_peers: &BTreeMap<PublicKey, Peer>,
+) -> BTreeMap<PublicKey, Peer> {
+    let requested_owners = allowed_ip_owners(
+        requested_peers
+            .iter()
+            .map(|(key, requested)| (key, &requested.peer)),
+    );
+    let actual_owners = allowed_ip_owners(
+        actual_peers
+            .iter()
+            .filter(|(key, _)| requested_peers.contains_key(key)),
+    );
+
+    requested_peers
+        .iter()
+        .filter_map(|(key, requested)| {
+            let actual = actual_peers.get(key)?;
+            let is_owned_by_other_peer = |owners: &HashMap<&IpNet, &PublicKey>, ip: &IpNet| {
+                owners.get(ip).is_some_and(|owner| *owner != key)
+            };
+
+            let loses_allowed_ip = actual
+                .allowed_ips
+                .iter()
+                .any(|ip| is_owned_by_other_peer(&requested_owners, ip));
+            if !loses_allowed_ip {
+                return None;
+            }
+
+            let mut released = requested.peer.clone();
+            released
+                .allowed_ips
+                .retain(|ip| !is_owned_by_other_peer(&actual_owners, ip));
+            Some((*key, released))
+        })
+        .collect()
+}
+
+fn allowed_ip_owners<'a>(
+    peers: impl Iterator<Item = (&'a PublicKey, &'a Peer)>,
+) -> HashMap<&'a IpNet, &'a PublicKey> {
+    peers
+        .flat_map(|(key, peer)| peer.allowed_ips.iter().map(move |ip| (ip, key)))
+        .collect()
 }
 
 fn check_allowed_ips_correctness(peers: &BTreeMap<PublicKey, RequestedPeer>) -> Result {
@@ -1292,6 +1351,87 @@ mod tests {
     type AllowedIps = Vec<IpAddr>;
 
     const TEST_PERSISTENT_KEEPALIVE_PERIOD: u32 = 25;
+
+    fn peers_with_allowed_ips(peers: &[(PublicKey, &[IpNet])]) -> BTreeMap<PublicKey, Peer> {
+        peers
+            .iter()
+            .map(|(public_key, allowed_ips)| {
+                (
+                    *public_key,
+                    Peer {
+                        public_key: *public_key,
+                        allowed_ips: allowed_ips.to_vec(),
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect()
+    }
+
+    fn released_allowed_ips(
+        requested: &[(PublicKey, &[IpNet])],
+        actual: &[(PublicKey, &[IpNet])],
+    ) -> BTreeMap<PublicKey, Vec<IpNet>> {
+        let requested = peers_with_allowed_ips(requested)
+            .into_iter()
+            .map(|(public_key, peer)| {
+                (
+                    public_key,
+                    RequestedPeer {
+                        peer,
+                        endpoint: None,
+                    },
+                )
+            })
+            .collect();
+
+        peers_releasing_allowed_ips(&requested, &peers_with_allowed_ips(actual))
+            .into_iter()
+            .map(|(public_key, peer)| (public_key, peer.allowed_ips))
+            .collect()
+    }
+
+    #[test]
+    fn peers_release_allowed_ips_moved_to_other_peers() {
+        let first_peer = SecretKey::gen().public();
+        let second_peer = SecretKey::gen().public();
+        let third_peer = SecretKey::gen().public();
+        let first_ip = IpNet::from(IpAddr::from([100, 64, 0, 2]));
+        let second_ip = IpNet::from(IpAddr::from([100, 64, 0, 3]));
+
+        assert_eq!(
+            released_allowed_ips(
+                &[(first_peer, &[first_ip]), (second_peer, &[second_ip])],
+                &[(first_peer, &[first_ip])],
+            ),
+            BTreeMap::new(),
+            "nothing moves"
+        );
+        assert_eq!(
+            released_allowed_ips(
+                &[(first_peer, &[second_ip]), (second_peer, &[first_ip])],
+                &[(first_peer, &[first_ip])],
+            ),
+            BTreeMap::from([(first_peer, vec![second_ip])]),
+            "moved to a new peer"
+        );
+        assert_eq!(
+            released_allowed_ips(
+                &[(first_peer, &[second_ip]), (second_peer, &[first_ip])],
+                &[(first_peer, &[first_ip]), (second_peer, &[second_ip])],
+            ),
+            BTreeMap::from([(first_peer, vec![]), (second_peer, vec![])]),
+            "swapped between two peers"
+        );
+        assert_eq!(
+            released_allowed_ips(
+                &[(first_peer, &[second_ip]), (third_peer, &[first_ip])],
+                &[(first_peer, &[first_ip]), (second_peer, &[second_ip])],
+            ),
+            BTreeMap::from([(first_peer, vec![second_ip])]),
+            "taken from a removed peer and moved to a new peer"
+        );
+    }
     const TEST_DIRECT_PERSISTENT_KEEPALIVE_PERIOD: u32 = 5;
 
     #[tokio::test]

@@ -1,0 +1,1 @@
+Fix WireGuard adapter being stopped when an allowed IP moves between peers (e.g. switching exit node from a meshnet peer to a VPN server); duplicate allowed IPs are reported as `BadConfig`, and failed exit node connections no longer stop libtelio's internal tasks
