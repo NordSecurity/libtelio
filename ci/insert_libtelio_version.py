@@ -4,9 +4,20 @@ import argparse
 import os
 import replace_string
 import sys
+from binary_version import (
+    VERSION_PLACEHOLDER,
+    patch_macho_dylib_version,
+    patch_pe_version_info,
+)
 from build_libtelio import LIBTELIO_CONFIG
 
-VERSION_PLACEHOLDER = "VERSION_PLACEHOLDER@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+
+def insert_version(binary: str, new_version: str):
+    replace_string.replace_string_in_file(binary, VERSION_PLACEHOLDER, new_version)
+    if binary.endswith(".dll"):
+        patch_pe_version_info(binary, new_version)
+    elif binary.endswith(".dylib"):
+        patch_macho_dylib_version(binary, new_version)
 
 
 def insert_version_to_libtelio_binaries_in_dir(new_version: str, path: str):
@@ -26,9 +37,7 @@ def insert_version_to_libtelio_binaries_in_dir(new_version: str, path: str):
             ):
                 print(f"{target_os}:{path}")
                 is_valid_package = True
-                replace_string.replace_string_in_file(
-                    path, VERSION_PLACEHOLDER, new_version
-                )
+                insert_version(path, new_version)
         else:
             for dirname, subdirnames, filenames in os.walk(path):
                 if "dSYM" in dirname:
@@ -40,9 +49,7 @@ def insert_version_to_libtelio_binaries_in_dir(new_version: str, path: str):
                         binary = os.path.join(dirname, filename)
                         print(f"{target_os}:{binary}")
                         is_valid_package = True
-                        replace_string.replace_string_in_file(
-                            binary, VERSION_PLACEHOLDER, new_version
-                        )
+                        insert_version(binary, new_version)
     if not is_valid_package:
         raise ValueError(f"Path {path} doesn't contain any libtelio packages")
 
