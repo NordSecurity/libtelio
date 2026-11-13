@@ -14,7 +14,7 @@ dependencies = [
     "autoflake==2.3.1",
     "black==24.1.1",
     "certifi==2026.10.23",
-    "cffi==1.17.1",
+    "cffi==2.1.1",
     "charset-normalizer==3.4.0",
     "click==8.1.7",
     "cryptography==43.0.3",
