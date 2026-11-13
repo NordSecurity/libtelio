@@ -69,7 +69,7 @@ dependencies = [
     "setuptools==84.2.1",
     "six==1.16.0",
     "tomli==2.0.2",
-    "tomlkit==0.12.5",
+    "tomlkit==0.15.2",
     "types-protobuf==6.30.2.20250703",
     "types-psutil==6.1.0.20241022",
     "types-pyyaml==6.0.12.20240917",
