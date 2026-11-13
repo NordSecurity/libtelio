@@ -1016,7 +1016,7 @@ rx_bytes=0
 tx_bytes=0
 last_handshake_time_sec=0
 last_handshake_time_nsec=0
-selected_cipher=aegis256
+selected_cipher=AEAD_AEGIS256
 errno=0
 "
         );
@@ -1080,7 +1080,7 @@ rx_bytes=0
 tx_bytes=0
 last_handshake_time_sec=0
 last_handshake_time_nsec=0
-supported_ciphers=chacha20poly1305,aegis256
+supported_ciphers=AEAD_CHACHA20_POLY1305,AEAD_AEGIS256
 errno=0
 "
         );
