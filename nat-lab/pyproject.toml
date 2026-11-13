@@ -7,7 +7,7 @@ dependencies = [
     "aiohappyeyeballs==2.4.3",
     "aiohttp==3.10.2",
     "aiosignal==1.3.1",
-    "astroid==3.2.2",
+    "astroid==4.3.4",
     "async-timeout==4.0.3",
     "asyncssh==2.21.0",
     "attrs==26.1.0",
@@ -50,7 +50,7 @@ dependencies = [
     "py==1.11.0",
     "pycparser==2.22",
     "pyflakes==3.2.0",
-    "pylint==3.2.3",
+    "pylint==4.1.3",
     "pyro5==5.15",
     "pytest-asyncio==0.24.0",
     "pytest-html==4.1.1",
@@ -159,6 +159,8 @@ ignored-modules = ["scapy.all"]
 # egregious cases but at a threshold that doesn't force opaque options-object
 # wrapping of otherwise-readable keyword arguments.
 max-args = 10
+# pylint 3.3+ checks positional arguments separately; keep the same threshold as max-args.
+max-positional-arguments = 10
 # Limits above current usage: catch egregious cases without forcing refactors.
 max-locals = 35
 max-statements = 90

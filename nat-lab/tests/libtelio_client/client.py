@@ -268,8 +268,7 @@ class Client:
                     async with asyncio.timeout(DEVICE_STOP_TIMEOUT):
                         await self.stop_device()
                         self._quit = True
-                # pylint: disable=broad-except
-                except Exception as e:
+                except Exception as e:  # pylint: disable=broad-exception-caught
                     log.exception(
                         "[%s] Exception while stopping device: %s. Will ignore until the end of the cleanup",
                         self._node.name,
