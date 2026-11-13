@@ -464,7 +464,7 @@ LIBTELIO_CONFIG = {
 
 def main() -> None:
     parser = rutils.create_cli_parser()
-    (build_parser, bindings_parser, lipo_parser, fetch_artifacts_parser) = (
+    build_parser, bindings_parser, lipo_parser, fetch_artifacts_parser = (
         parser._subparsers._group_actions[0].choices["build"],
         parser._subparsers._group_actions[0].choices["bindings"],
         parser._subparsers._group_actions[0].choices["lipo"],

@@ -144,32 +144,36 @@ server_poland = {
     "hostname": "pl128.nordvpn.com",
     "load": 21,
     "status": "online",
-    "locations": [{
-        "id": 1,
-        "created_at": "2024-06-15 14:06:47",
-        "updated_at": "2024-06-15 14:06:47",
-        "longitude": 21,
-        "latitude": 52.25,
-        "country": {
+    "locations": [
+        {
             "id": 1,
-            "name": "Poland",
-            "code": "PL",
-            "city": {
-                "id": 6863429,
-                "name": "Warsaw",
-                "latitude": 52.25,
-                "longitude": 21,
-                "dns_name": "warsaw",
+            "created_at": "2024-06-15 14:06:47",
+            "updated_at": "2024-06-15 14:06:47",
+            "longitude": 21,
+            "latitude": 52.25,
+            "country": {
+                "id": 1,
+                "name": "Poland",
+                "code": "PL",
+                "city": {
+                    "id": 6863429,
+                    "name": "Warsaw",
+                    "latitude": 52.25,
+                    "longitude": 21,
+                    "dns_name": "warsaw",
+                },
             },
-        },
-    }],
-    "services": [{
-        "id": 1,
-        "name": "VPN",
-        "identifier": "vpn",
-        "created_at": "2017-03-21 12:00:45",
-        "updated_at": "2017-05-25 13:12:31",
-    }],
+        }
+    ],
+    "services": [
+        {
+            "id": 1,
+            "name": "VPN",
+            "identifier": "vpn",
+            "created_at": "2017-03-21 12:00:45",
+            "updated_at": "2017-05-25 13:12:31",
+        }
+    ],
     "technologies": [
         {
             "id": 11,
@@ -202,15 +206,17 @@ server_poland = {
     ],
     "groups": [],
     "specifications": [],
-    "ips": [{
-        "id": 1019456,
-        "created_at": "2023-07-14 07:40:33",
-        "updated_at": "2023-07-14 07:40:33",
-        "server_id": 1,
-        "ip_id": 23702,
-        "type": "entry",
-        "ip": {"id": 23702, "ip": "10.0.100.1", "version": 4},
-    }],
+    "ips": [
+        {
+            "id": 1019456,
+            "created_at": "2023-07-14 07:40:33",
+            "updated_at": "2023-07-14 07:40:33",
+            "server_id": 1,
+            "ip_id": 23702,
+            "type": "entry",
+            "ip": {"id": 23702, "ip": "10.0.100.1", "version": 4},
+        }
+    ],
 }
 
 server_germany = {
@@ -222,32 +228,36 @@ server_germany = {
     "hostname": "de1263.nordvpn.com",
     "load": 7,
     "status": "online",
-    "locations": [{
-        "id": 1,
-        "created_at": "2023-06-15 14:06:47",
-        "updated_at": "2023-06-15 14:06:47",
-        "longitude": 13.4,
-        "latitude": 52.516667,
-        "country": {
-            "id": 2,
-            "name": "Germany",
-            "code": "DE",
-            "city": {
-                "id": 2181458,
-                "name": "Berlin",
-                "latitude": 52.516667,
-                "longitude": 13.4,
-                "dns_name": "berlin",
+    "locations": [
+        {
+            "id": 1,
+            "created_at": "2023-06-15 14:06:47",
+            "updated_at": "2023-06-15 14:06:47",
+            "longitude": 13.4,
+            "latitude": 52.516667,
+            "country": {
+                "id": 2,
+                "name": "Germany",
+                "code": "DE",
+                "city": {
+                    "id": 2181458,
+                    "name": "Berlin",
+                    "latitude": 52.516667,
+                    "longitude": 13.4,
+                    "dns_name": "berlin",
+                },
             },
-        },
-    }],
-    "services": [{
-        "id": 1,
-        "name": "VPN",
-        "identifier": "vpn",
-        "created_at": "2017-03-21 12:00:45",
-        "updated_at": "2017-05-25 13:12:31",
-    }],
+        }
+    ],
+    "services": [
+        {
+            "id": 1,
+            "name": "VPN",
+            "identifier": "vpn",
+            "created_at": "2017-03-21 12:00:45",
+            "updated_at": "2017-05-25 13:12:31",
+        }
+    ],
     "technologies": [
         {
             "id": 11,
@@ -280,15 +290,17 @@ server_germany = {
     ],
     "groups": [],
     "specifications": [],
-    "ips": [{
-        "id": 1019456,
-        "created_at": "2023-07-14 07:40:33",
-        "updated_at": "2023-07-14 07:40:33",
-        "server_id": 1,
-        "ip_id": 23702,
-        "type": "entry",
-        "ip": {"id": 23702, "ip": "10.0.100.2", "version": 4},
-    }],
+    "ips": [
+        {
+            "id": 1019456,
+            "created_at": "2023-07-14 07:40:33",
+            "updated_at": "2023-07-14 07:40:33",
+            "server_id": 1,
+            "ip_id": 23702,
+            "type": "entry",
+            "ip": {"id": 23702, "ip": "10.0.100.2", "version": 4},
+        }
+    ],
 }
 
 country_to_server_mapping: Dict[int, dict] = {

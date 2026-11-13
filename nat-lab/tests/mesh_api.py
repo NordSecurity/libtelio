@@ -348,11 +348,13 @@ class API:
         beta_ip_stack: IPStack = IPStack.IPv4,
         gamma_ip_stack: IPStack = IPStack.IPv4,
     ) -> Tuple[Node, Node, Node]:
-        alpha, beta, gamma, *_ = self.config_dynamic_nodes([
-            (alpha_is_local, alpha_ip_stack),
-            (beta_is_local, beta_ip_stack),
-            (gamma_is_local, gamma_ip_stack),
-        ])
+        alpha, beta, gamma, *_ = self.config_dynamic_nodes(
+            [
+                (alpha_is_local, alpha_ip_stack),
+                (beta_is_local, beta_ip_stack),
+                (gamma_is_local, gamma_ip_stack),
+            ]
+        )
         alpha.set_peer_firewall_settings(gamma.id, allow_incoming_connections=True)
         alpha.set_peer_firewall_settings(beta.id, allow_incoming_connections=True)
         beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)

@@ -114,7 +114,7 @@ class TelioLoggerCbImpl(libtelio.TelioLoggerCb):
             self.logfile.write(text)
 
     def log(self, log_level, payload):
-        (start_ts, lock_acquired_ts, end_ts) = self._do_log(log_level, payload)
+        start_ts, lock_acquired_ts, end_ts = self._do_log(log_level, payload)
         if end_ts - start_ts > 0.5:
             self._do_log(
                 log_level,

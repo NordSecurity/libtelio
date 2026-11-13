@@ -405,27 +405,32 @@ async def set_secondary_ifc_state(
     if connection.tag == ConnectionTag.VM_ANDROID_1:
         return None  # single bridged interface, no secondary
     if connection.target_os == TargetOS.Linux:
-        await connection.create_process([
-            "ip",
-            "link",
-            "set",
-            "eth1",
-            "up" if enable else "down",
-        ]).execute()
+        await connection.create_process(
+            [
+                "ip",
+                "link",
+                "set",
+                "eth1",
+                "up" if enable else "down",
+            ]
+        ).execute()
     elif connection.target_os == TargetOS.Mac:
-        await connection.create_process([
-            "ifconfig",
-            "eth1",
-            "up" if enable else "down",
-        ]).execute()
+        await connection.create_process(
+            [
+                "ifconfig",
+                "eth1",
+                "up" if enable else "down",
+            ]
+        ).execute()
     elif connection.target_os == TargetOS.Windows:
         if not secondary_ifc:
             interfaces = await Interface.get_enabled_network_interfaces(connection)
             for interface in interfaces:
                 if interface.ipv4:
                     if (
-                        interface.ipv4
-                        == config.LAN_ADDR_MAP[connection.tag]["secondary"]
+                        interface.ipv4 == config.LAN_ADDR_MAP[connection.tag][
+                            "secondary"
+                        ]
                     ):
                         secondary_ifc = interface
         assert secondary_ifc, LookupError("Couldn't find secondary interface")

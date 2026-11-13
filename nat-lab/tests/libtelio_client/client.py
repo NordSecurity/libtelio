@@ -159,12 +159,12 @@ class Client:
         self._events = Events(self._runtime)
 
         object_name = str(uuid.uuid4()).replace("-", "")
-        (host_ip, container_ip) = await self._connection.get_ip_address()
+        host_ip, container_ip = await self._connection.get_ip_address()
 
         host_os = platform.system()
         if host_os == "Linux":
             host_ip = container_ip
-        (host_port, container_port) = await self._connection.mapped_ports()
+        host_port, container_port = await self._connection.mapped_ports()
 
         python_cmd = get_python_binary(self._connection)
         uniffi_path = get_uniffi_path(self._connection)
@@ -268,8 +268,7 @@ class Client:
                     async with asyncio.timeout(DEVICE_STOP_TIMEOUT):
                         await self.stop_device()
                         self._quit = True
-                # pylint: disable=broad-except
-                except Exception as e:
+                except Exception as e:  # pylint: disable=broad-exception-caught
                     log.exception(
                         "[%s] Exception while stopping device: %s. Will ignore until the end of the cleanup",
                         self._node.name,

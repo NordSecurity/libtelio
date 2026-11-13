@@ -13,13 +13,15 @@ class NetworkSwitcherMac(NetworkSwitcher):
         await self._connection.create_process(
             ["route", "add", "default", GW_ADDR_MAP[self._connection.tag]["primary"]]
         ).execute()
-        await self._connection.create_process([
-            "route",
-            "add",
-            "-inet",
-            VPN_SERVER_SUBNET,
-            GW_ADDR_MAP[self._connection.tag]["primary"],
-        ]).execute()
+        await self._connection.create_process(
+            [
+                "route",
+                "add",
+                "-inet",
+                VPN_SERVER_SUBNET,
+                GW_ADDR_MAP[self._connection.tag]["primary"],
+            ]
+        ).execute()
 
         for derp in DERP_SERVERS:
             await self._connection.create_process(
@@ -36,13 +38,15 @@ class NetworkSwitcherMac(NetworkSwitcher):
         await self._connection.create_process(
             ["route", "add", "default", GW_ADDR_MAP[self._connection.tag]["secondary"]]
         ).execute()
-        await self._connection.create_process([
-            "route",
-            "add",
-            "-inet",
-            VPN_SERVER_SUBNET,
-            GW_ADDR_MAP[self._connection.tag]["secondary"],
-        ]).execute()
+        await self._connection.create_process(
+            [
+                "route",
+                "add",
+                "-inet",
+                VPN_SERVER_SUBNET,
+                GW_ADDR_MAP[self._connection.tag]["secondary"],
+            ]
+        ).execute()
 
         for derp in config.DERP_SERVERS:
             await self._connection.create_process(
