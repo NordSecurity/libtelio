@@ -2,8 +2,6 @@
 
 use std::net::SocketAddr;
 
-use rand::RngExt;
-
 /// Upstream resolver list with a generation counter to detect changes
 #[derive(Clone, Debug, Default)]
 pub(crate) struct UpstreamList {
@@ -25,10 +23,10 @@ impl UpstreamList {
         }
     }
 
-    /// Create new upstream cursor for current generation, starting at a random upstream
-    pub(crate) fn new_cursor(&self) -> UpstreamCursor {
+    /// Create new upstream cursor for current generation, starting at `seed % len`
+    pub(crate) fn new_cursor(&self, seed: u16) -> UpstreamCursor {
         UpstreamCursor {
-            seed: rand::rng().random_range(0..=usize::MAX),
+            seed,
             tried: 0,
             generation: self.generation,
         }
@@ -38,7 +36,7 @@ impl UpstreamList {
 /// Round robin cursor over the upstream list for one query
 #[derive(Clone, Debug)]
 pub(crate) struct UpstreamCursor {
-    seed: usize,
+    seed: u16,
     tried: usize,
     generation: u64,
 }
@@ -62,12 +60,14 @@ impl UpstreamCursor {
         };
 
         let addrs = &current_upstream.addrs;
-        let next = (self.tried < addrs.len())
-            .then(|| {
-                let start = self.seed % addrs.len();
-                addrs.get((start + self.tried) % addrs.len()).copied()
-            })
-            .flatten();
+        let len = addrs.len();
+        let next = if self.tried < len {
+            addrs
+                .get((usize::from(self.seed) + self.tried) % len)
+                .copied()
+        } else {
+            None
+        };
         self.tried = self.tried.saturating_add(1);
         CursorAdvanced { next, restarted }
     }
@@ -75,6 +75,8 @@ impl UpstreamCursor {
 
 #[cfg(test)]
 mod tests {
+    use telio_model::constants::DNS_PORT;
+
     use super::*;
     use std::collections::HashSet;
 
@@ -82,7 +84,7 @@ mod tests {
         UpstreamList { addrs, generation }
     }
 
-    fn cursor(seed: usize, generation: u64) -> UpstreamCursor {
+    fn cursor(seed: u16, generation: u64) -> UpstreamCursor {
         UpstreamCursor {
             seed,
             tried: 0,
@@ -95,7 +97,7 @@ mod tests {
     }
 
     fn addr(last_octet: u8) -> SocketAddr {
-        SocketAddr::from(([10, 0, 0, last_octet], 53))
+        SocketAddr::from(([10, 0, 0, last_octet], DNS_PORT))
     }
 
     #[test]
@@ -149,7 +151,7 @@ mod tests {
     fn generation_wraps_around() {
         let a1 = addr(1);
         let mut state = upstream_list(vec![], u64::MAX);
-        let mut cursor = state.new_cursor();
+        let mut cursor = state.new_cursor(0);
 
         state.set(vec![a1]);
         assert_eq!(state.generation, 0);
@@ -181,16 +183,15 @@ mod tests {
     }
 
     #[test]
-    fn advance_max_seed_does_not_overflow() {
-        let (a1, a2, a3) = (addr(1), addr(2), addr(3));
-        let state = upstream_list(vec![a1, a2, a3], 0);
-        let mut cursor = cursor(usize::MAX, 0);
-        let start = usize::MAX % 3;
+    fn advance_max_seed_wraps_start() {
+        let (a1, a2, a3, a4) = (addr(1), addr(2), addr(3), addr(4));
+        let state = upstream_list(vec![a1, a2, a3, a4], 0);
+        let mut cursor = cursor(u16::MAX, 0);
 
-        for i in 0..3 {
-            let expected = state.addrs()[(start + i) % 3];
-            assert_eq!(cursor.advance(&state), step(Some(expected), false));
-        }
+        assert_eq!(cursor.advance(&state), step(Some(a4), false));
+        assert_eq!(cursor.advance(&state), step(Some(a1), false));
+        assert_eq!(cursor.advance(&state), step(Some(a2), false));
+        assert_eq!(cursor.advance(&state), step(Some(a3), false));
         assert_eq!(cursor.advance(&state), step(None, false));
     }
 
@@ -253,7 +254,7 @@ mod tests {
     fn fresh_cursor_binds_to_any_generation_without_restart() {
         let a1 = addr(1);
         let state = upstream_list(vec![a1], 42);
-        let mut cursor = state.new_cursor();
+        let mut cursor = state.new_cursor(0);
 
         assert_eq!(cursor.advance(&state), step(Some(a1), false));
     }
@@ -261,31 +262,22 @@ mod tests {
     #[test]
     fn advance_empty_list_returns_none() {
         let state = upstream_list(vec![], 0);
-        let mut cursor = state.new_cursor();
+        let mut cursor = state.new_cursor(0);
         assert_eq!(cursor.advance(&state), step(None, false));
     }
 
     #[test]
-    fn fresh_cursor_tries_every_upstream_once() {
-        let addrs = vec![addr(1), addr(2), addr(3), addr(4)];
-        let state = upstream_list(addrs.clone(), 0);
-        let mut cursor = state.new_cursor();
-
-        let tried: HashSet<_> = (0..addrs.len())
-            .map(|_| cursor.advance(&state).next.unwrap())
-            .collect();
-        assert_eq!(tried, addrs.into_iter().collect());
-        assert_eq!(cursor.advance(&state), step(None, false));
-    }
-
-    #[test]
-    fn fresh_cursors_start_at_different_upstreams() {
+    fn cursor_tries_every_upstream_once_for_any_seed() {
         let addrs = vec![addr(1), addr(2), addr(3), addr(4)];
         let state = upstream_list(addrs.clone(), 0);
 
-        let firsts: HashSet<_> = (0..200)
-            .map(|_| state.new_cursor().advance(&state).next.unwrap())
-            .collect();
-        assert_eq!(firsts, addrs.into_iter().collect());
+        for seed in 0..8 {
+            let mut cursor = state.new_cursor(seed);
+            let tried: HashSet<_> = (0..addrs.len())
+                .map(|_| cursor.advance(&state).next.unwrap())
+                .collect();
+            assert_eq!(tried, addrs.iter().copied().collect(), "seed {}", seed);
+            assert_eq!(cursor.advance(&state), step(None, false));
+        }
     }
 }

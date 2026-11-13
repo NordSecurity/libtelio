@@ -119,11 +119,27 @@ fn allocate_id(pending: &HashMap<u16, PendingQuery>, next_id: &mut u16) -> Optio
     None
 }
 
+/// Seed for picking each query's first upstream
+type SeedSource = fn() -> u16;
+
+fn random_seed() -> u16 {
+    rand::rng().random()
+}
+
 impl UdpForwarder {
     /// Create a new DNS forwarder
     pub(crate) async fn new(
         upstreams: Arc<Mutex<UpstreamList>>,
         timeout: Duration,
+    ) -> Result<Self, ForwardError> {
+        Self::with_seed_source(upstreams, timeout, random_seed).await
+    }
+
+    /// Create a new DNS forwarder drawing each query's upstream cursor seed from `next_seed`
+    async fn with_seed_source(
+        upstreams: Arc<Mutex<UpstreamList>>,
+        timeout: Duration,
+        next_seed: SeedSource,
     ) -> Result<Self, ForwardError> {
         let socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
 
@@ -131,7 +147,7 @@ impl UdpForwarder {
 
         let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
 
-        tokio::spawn(Self::run(socket, rx, upstreams, timeout));
+        tokio::spawn(Self::run(socket, rx, upstreams, timeout, next_seed));
 
         Ok(UdpForwarder { tx })
     }
@@ -170,6 +186,7 @@ impl UdpForwarder {
         mut rx: mpsc::Receiver<ForwardQuery>,
         upstreams: Arc<Mutex<UpstreamList>>,
         timeout: Duration,
+        next_seed: SeedSource,
     ) {
         telio_log_debug!("Forwarder starting");
         let mut recv_buf = vec![0u8; FORWARDER_BUFFER_SIZE];
@@ -189,6 +206,7 @@ impl UdpForwarder {
                                 forward_msg,
                                 &upstreams,
                                 timeout,
+                                next_seed,
                                 &mut pending,
                                 &mut next_id,
                             ).await;
@@ -262,6 +280,7 @@ impl UdpForwarder {
         msg: ForwardQuery,
         upstreams: &Arc<Mutex<UpstreamList>>,
         timeout: Duration,
+        next_seed: SeedSource,
         pending: &mut HashMap<u16, PendingQuery>,
         next_id: &mut u16,
     ) {
@@ -276,7 +295,7 @@ impl UdpForwarder {
 
         let (upstream_addr, upstream_cursor) = {
             let state = upstreams.lock().await;
-            let mut cursor = state.new_cursor();
+            let mut cursor = state.new_cursor(next_seed());
             match cursor.advance(&state).next {
                 Some(addr) => (addr, cursor),
                 None => {
@@ -605,21 +624,39 @@ pub(crate) mod tests {
         new_forwarder_with_timeout(addrs, QUERY_TIMEOUT).await
     }
 
+    async fn new_forwarder_with_seed(
+        addrs: Vec<SocketAddr>,
+        timeout: Duration,
+        next_seed: SeedSource,
+    ) -> (UdpForwarder, Arc<Mutex<UpstreamList>>) {
+        let upstreams = Arc::new(Mutex::new(UpstreamList::default()));
+        upstreams.lock().await.set(addrs);
+        let forwarder = UdpForwarder::with_seed_source(upstreams.clone(), timeout, next_seed)
+            .await
+            .unwrap();
+        (forwarder, upstreams)
+    }
+
     async fn new_forwarder_with_timeout(
         addrs: Vec<SocketAddr>,
         timeout: Duration,
     ) -> (UdpForwarder, Arc<Mutex<UpstreamList>>) {
-        let upstreams = Arc::new(Mutex::new(UpstreamList::default()));
-        upstreams.lock().await.set(addrs);
-        let forwarder = UdpForwarder::new(upstreams.clone(), timeout).await.unwrap();
-        (forwarder, upstreams)
+        new_forwarder_with_seed(addrs, timeout, random_seed).await
+    }
+
+    /// Forwarder whose queries always start at the first upstream
+    async fn new_forwarder_first_upstream(
+        addrs: Vec<SocketAddr>,
+        timeout: Duration,
+    ) -> (UdpForwarder, Arc<Mutex<UpstreamList>>) {
+        new_forwarder_with_seed(addrs, timeout, || 0).await
     }
 
     fn dummy_pending() -> PendingQuery {
         PendingQuery {
             original_id: 0,
             query_bytes: vec![],
-            upstream_cursor: UpstreamList::default().new_cursor(),
+            upstream_cursor: UpstreamList::default().new_cursor(0),
             sent_to: SocketAddr::from((Ipv4Addr::LOCALHOST, DNS_PORT)),
             respond_to: oneshot::channel().0,
             deadline: Instant::now(),
@@ -777,16 +814,17 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn forward_query_falls_back_to_second_upstream() {
-        let (blackhole_addr, _bh_handle) = spawn_stub(StubBehavior::BlackHole).await;
+        let (blackhole_addr, bh_handle) = spawn_stub(StubBehavior::BlackHole).await;
         let (reply_addr, _reply_handle) = spawn_stub(StubBehavior::Echo).await;
 
         let (forwarder, _upstreams) =
-            new_forwarder_with_timeout(vec![blackhole_addr, reply_addr], BLACKHOLE_QUERY_TIMEOUT)
+            new_forwarder_first_upstream(vec![blackhole_addr, reply_addr], BLACKHOLE_QUERY_TIMEOUT)
                 .await;
 
         let request = make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD);
         let result = forwarder.query(&request).await.unwrap();
 
+        assert!(bh_handle.is_finished(), "blackhole tried first");
         assert_eq!(get_dns_id(&result).unwrap(), TEST_PACKET_ID);
         assert_eq!(&result[2..], TEST_DNS_PAYLOAD);
     }
@@ -882,18 +920,19 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn tcp_retry_goes_to_upstream_that_truncated() {
-        let (blackhole_addr, _bh) = spawn_stub(StubBehavior::BlackHole).await;
+        let (blackhole_addr, bh_handle) = spawn_stub(StubBehavior::BlackHole).await;
         let (addr, _udp, _tcp) = spawn_udp_tcp_stub(
             StubBehavior::EchoTruncated,
             TcpStubBehavior::Echo { pad_to: 1500 },
         )
         .await;
         let (forwarder, _upstreams) =
-            new_forwarder_with_timeout(vec![blackhole_addr, addr], BLACKHOLE_QUERY_TIMEOUT).await;
+            new_forwarder_first_upstream(vec![blackhole_addr, addr], BLACKHOLE_QUERY_TIMEOUT).await;
 
         let request = make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD);
         let result = forwarder.query(&request).await.unwrap();
 
+        assert!(bh_handle.is_finished(), "blackhole tried first");
         assert_eq!(result.len(), 1500);
     }
 
