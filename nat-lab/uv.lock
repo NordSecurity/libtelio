@@ -1799,7 +1799,7 @@ requires-dist = [
     { name = "psutil", specifier = "==7.2.2" },
     { name = "py", specifier = "==1.11.0" },
     { name = "pycparser", specifier = "==3.11" },
-    { name = "pyflakes", specifier = "==3.2.0" },
+    { name = "pyflakes", specifier = "==4.0.3" },
     { name = "pylint", specifier = "==4.1.3" },
     { name = "pyro5", specifier = "==5.15" },
     { name = "pytest", specifier = "==8.3.3" },
@@ -2124,11 +2124,11 @@ wheels = [
 
 [[package]]
 name = "pyflakes"
-version = "3.2.0"
+version = "4.0.3"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/57/f9/669d8c9c86613c9d568757c7f5824bd3197d7b1c6c27553bc5618a27cce2/pyflakes-3.2.0.tar.gz", hash = "sha256:1c61603ff154621fb2a9172037d84dca3500def8c8b630657d1701f026f8af3f", size = 63788, upload-time = "2024-01-05T00:28:47.703Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2c/1b/3ba8bd62723cfe1b651c4e4b89b33767fce7a08bb800491cf1d3dd3a7716/pyflakes-4.0.3.tar.gz", hash = "sha256:94762a3a5a343a79b28754f96c554bce057a592a4896907d73f0369fe824e053", size = 67126, upload-time = "2026-10-07T18:57:25.327Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d4/d7/f1b7db88d8e4417c5d47adad627a93547f44bdc9028372dbd2313f34a855/pyflakes-3.2.0-py2.py3-none-any.whl", hash = "sha256:84b5be138a2dfbb40689ca07e2152deb896a65c3a3e24c251c5c62489568074a", size = 62725, upload-time = "2024-01-05T00:28:45.903Z" },
+    { url = "https://files.pythonhosted.org/packages/44/b0/554d720d71083ccd24ba2f376c048544c073570e7bb18b34d769cef77f66/pyflakes-4.0.3-py2.py3-none-any.whl", hash = "sha256:330ba92b8c1db2eb0b8f4068f6c58674e2649a99e334769aa50e3e9c5b11c23a", size = 66250, upload-time = "2026-10-07T18:57:24.403Z" },
 ]
 
 [[package]]
