@@ -17,7 +17,7 @@ dependencies = [
     "cffi==2.1.1",
     "charset-normalizer==3.4.0",
     "click==8.1.7",
-    "cryptography==43.0.3",
+    "cryptography==50.0.2",
     "dacite==1.9.2",
     "dataclasses-json==0.6.7",
     "deepdiff==9.1.0",
