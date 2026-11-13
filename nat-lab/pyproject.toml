@@ -22,7 +22,7 @@ dependencies = [
     "dataclasses-json==0.6.7",
     "deepdiff==8.1.1",
     "dill==0.4.1",
-    "distlib==0.3.8",
+    "distlib==0.4.4",
     "exceptiongroup==1.2.2",
     "grpcio-tools==1.72.0",
     "filelock==3.15.1",
