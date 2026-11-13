@@ -66,7 +66,7 @@ dependencies = [
     "requests==2.32.3",
     "scapy==2.6.0",
     "serpent==1.41",
-    "setuptools==70.0.0",
+    "setuptools==84.2.1",
     "six==1.16.0",
     "tomli==2.0.2",
     "tomlkit==0.12.5",

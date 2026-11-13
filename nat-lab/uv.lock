@@ -1155,7 +1155,7 @@ requires-dist = [
     { name = "requests", specifier = "==2.32.3" },
     { name = "scapy", specifier = "==2.6.0" },
     { name = "serpent", specifier = "==1.41" },
-    { name = "setuptools", specifier = "==70.0.0" },
+    { name = "setuptools", specifier = "==84.2.1" },
     { name = "six", specifier = "==1.16.0" },
     { name = "tomli", specifier = "==2.0.2" },
     { name = "tomlkit", specifier = "==0.12.5" },
@@ -1808,11 +1808,11 @@ wheels = [
 
 [[package]]
 name = "setuptools"
-version = "70.0.0"
+version = "84.2.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/aa/60/5db2249526c9b453c5bb8b9f6965fcab0ddb7f40ad734420b3b421f7da44/setuptools-70.0.0.tar.gz", hash = "sha256:f211a66637b8fa059bb28183da127d4e86396c991a942b028c6650d4319c3fd0", size = 2265182, upload-time = "2024-05-21T10:28:18.891Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/70/b3/c19426f783614d625699a4b247faf628ea9ab1db228674491767b417f9e1/setuptools-84.2.1.tar.gz", hash = "sha256:3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc", size = 1230289, upload-time = "2026-10-20T19:01:37.742Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/de/88/70c5767a0e43eb4451c2200f07d042a4bcd7639276003a9c54a68cfcc1f8/setuptools-70.0.0-py3-none-any.whl", hash = "sha256:54faa7f2e8d2d11bcd2c07bed282eef1046b5c080d1c32add737d7b5817b1ad4", size = 863432, upload-time = "2024-05-21T10:28:12.781Z" },
+    { url = "https://files.pythonhosted.org/packages/ef/55/6dc6d6bb953bdfc52519a0059592c52b6e3b8ad51cf8256dffceb55b0610/setuptools-84.2.1-py3-none-any.whl", hash = "sha256:ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2", size = 876263, upload-time = "2026-10-20T19:01:35.678Z" },
 ]
 
 [[package]]
