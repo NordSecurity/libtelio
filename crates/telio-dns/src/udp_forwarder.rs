@@ -3,7 +3,7 @@
 //! This module provides a layer for forwarding DNS queries to upstream resolvers.
 //! Multiple queries can be in flight concurrently.
 //!
-//! Upstream resolvers are tried in order they are set.
+//! Each query starts at a random upstream resolver and walks the list round robin.
 //! If no response is received after the set timeout, the next
 //! upstream resolver is tried.
 //! A truncated response is retried over TCP against the same upstream
@@ -416,9 +416,7 @@ impl UdpForwarder {
             };
 
             if advance.restarted {
-                telio_log_debug!(
-                    "Upstreams changed for request: {internal_id}, restarting from index 0"
-                );
+                telio_log_debug!("Upstreams changed for request: {internal_id}, restarting");
             }
 
             match advance.next {
@@ -454,6 +452,7 @@ pub(crate) mod tests {
         tcp_fallback::tests::{frame, read_frame, spawn_tcp_stub, TcpStubBehavior},
     };
     use std::net::Ipv4Addr;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use telio_model::constants::DNS_PORT;
     use tokio::io::AsyncWriteExt;
     use tokio::net::TcpListener;
@@ -508,6 +507,23 @@ pub(crate) mod tests {
             }
             received
         })
+    }
+
+    /// Echo stub that counts received queries
+    async fn spawn_counting_echo_stub() -> (SocketAddr, Arc<AtomicUsize>) {
+        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let addr = socket.local_addr().unwrap();
+        let count = Arc::new(AtomicUsize::new(0));
+        let counter = count.clone();
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 4096];
+            loop {
+                let (n, src) = socket.recv_from(&mut buf).await.unwrap();
+                counter.fetch_add(1, Ordering::Relaxed);
+                socket.send_to(&buf[..n], src).await.unwrap();
+            }
+        });
+        (addr, count)
     }
 
     /// UDP socket and TCP listener bound to the same 127.0.0.1 port
@@ -737,6 +753,26 @@ pub(crate) mod tests {
 
         assert_eq!(get_dns_id(&result).unwrap(), TEST_PACKET_ID);
         assert_eq!(&result[2..], TEST_DNS_PAYLOAD);
+    }
+
+    #[tokio::test]
+    async fn queries_are_spread_across_upstreams() {
+        let (addr1, count1) = spawn_counting_echo_stub().await;
+        let (addr2, count2) = spawn_counting_echo_stub().await;
+        let (forwarder, _upstreams) = new_forwarder(vec![addr1, addr2]).await;
+
+        let query_count = 64;
+        for i in 0..query_count {
+            let request = make_dns_packet(i, TEST_DNS_PAYLOAD);
+            forwarder.query(&request).await.unwrap();
+        }
+
+        let (c1, c2) = (
+            count1.load(Ordering::Relaxed),
+            count2.load(Ordering::Relaxed),
+        );
+        assert_eq!(c1 + c2, usize::from(query_count));
+        assert!(c1 > 0 && c2 > 0, "c1={} c2={}", c1, c2);
     }
 
     #[tokio::test]
