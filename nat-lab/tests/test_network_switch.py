@@ -290,11 +290,13 @@ async def test_mesh_network_switch_direct(
         peers_connected_direct_future = beta_client.events.wait_for_event_peer(
             alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
         )
-        async with run_async_contexts([
-            derp_connected_future,
-            peers_connected_relay_future,
-            peers_connected_direct_future,
-        ]) as (derp, relay, direct):
+        async with run_async_contexts(
+            [
+                derp_connected_future,
+                peers_connected_relay_future,
+                peers_connected_direct_future,
+            ]
+        ) as (derp, relay, direct):
             await network_switcher.switch_to_secondary_network()
             await alpha_client.notify_network_change()
             await derp
@@ -304,12 +306,16 @@ async def test_mesh_network_switch_direct(
         await ping(alpha_connection, beta.ip_addresses[0])
 
         # LLT-5532: To be cleaned up...
-        alpha_client.allow_errors([
-            "telio_traversal::endpoint_providers::stun.*Starting session failed.*A socket operation was attempted to an unreachable network"
-        ])
-        beta_client.allow_errors([
-            "telio_traversal::endpoint_providers::stun.*Starting session failed.*A socket operation was attempted to an unreachable network"
-        ])
+        alpha_client.allow_errors(
+            [
+                "telio_traversal::endpoint_providers::stun.*Starting session failed.*A socket operation was attempted to an unreachable network"
+            ]
+        )
+        beta_client.allow_errors(
+            [
+                "telio_traversal::endpoint_providers::stun.*Starting session failed.*A socket operation was attempted to an unreachable network"
+            ]
+        )
 
 
 class TestInterfaceWindows:
@@ -653,21 +659,24 @@ Configuration for interface "Loopback Pseudo-Interface 1"
             mock_primary.delete_route.assert_called_once()
             mock_secondary.delete_route.assert_called_once()
 
-            mock_connection.create_process.assert_any_call([
-                "netsh",
-                "interface",
-                "ipv4",
-                "add",
-                "route",
-                "0.0.0.0/0",
-                (
-                    mock_primary.name
-                    if gateway
-                    == config.GW_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]["primary"]
-                    else mock_secondary.name
-                ),
-                f"nexthop={gateway}",
-            ])
+            mock_connection.create_process.assert_any_call(
+                [
+                    "netsh",
+                    "interface",
+                    "ipv4",
+                    "add",
+                    "route",
+                    "0.0.0.0/0",
+                    (
+                        mock_primary.name
+                        if gateway == config.GW_ADDR_MAP[ConnectionTag.VM_WINDOWS_1][
+                            "primary"
+                        ]
+                        else mock_secondary.name
+                    ),
+                    f"nexthop={gateway}",
+                ]
+            )
 
     @pytest.mark.asyncio
     async def test_switch_network_failure(self):

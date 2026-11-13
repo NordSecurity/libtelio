@@ -89,8 +89,7 @@ class TcpDump:
             # to file, everything works fine
             term_type=(
                 "xterm"
-                if self.connection.tag
-                in [
+                if self.connection.tag in [
                     ConnectionTag.VM_MAC,
                     ConnectionTag.VM_LINUX_NLX_1,
                     ConnectionTag.VM_LINUX_FULLCONE_GW_1,

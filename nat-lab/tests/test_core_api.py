@@ -191,10 +191,12 @@ async def fixture_register_machine(machine_data):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "machine_data",
-    [[
-        linux_vm,
-        windows_vm,
-    ]],
+    [
+        [
+            linux_vm,
+            windows_vm,
+        ]
+    ],
     indirect=True,
 )
 async def test_register_multiple_machines(registered_machines, machine_data):
@@ -216,10 +218,12 @@ async def test_register_multiple_machines(registered_machines, machine_data):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "machine_data",
-    [[
-        linux_vm,
-        windows_vm,
-    ]],
+    [
+        [
+            linux_vm,
+            windows_vm,
+        ]
+    ],
     indirect=True,
 )
 async def test_get_all_machines(registered_machines, machine_data):
@@ -323,10 +327,12 @@ async def test_delete_registered_machine(registered_machines, machine_data):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "machine_data",
-    [[
-        linux_vm,
-        windows_vm,
-    ]],
+    [
+        [
+            linux_vm,
+            windows_vm,
+        ]
+    ],
     indirect=True,
 )
 # pylint: disable=unused-argument

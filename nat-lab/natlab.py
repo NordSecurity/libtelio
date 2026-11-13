@@ -453,12 +453,14 @@ def start(
     if "GITLAB_CI" in os.environ:
         try:
             run_command(["sudo", "mount", "-t", "debugfs", "none", "/sys/kernel/debug"])
-            run_command([
-                "sudo",
-                "sh",
-                "-c",
-                "echo 'module wireguard +p' > /sys/kernel/debug/dynamic_debug/control",
-            ])
+            run_command(
+                [
+                    "sudo",
+                    "sh",
+                    "-c",
+                    "echo 'module wireguard +p' > /sys/kernel/debug/dynamic_debug/control",
+                ]
+            )
         except subprocess.CalledProcessError as e:
             print(f"Enabling WireGuard dynamic debug failed: {e}")
 
@@ -479,12 +481,14 @@ def start(
 def stop():
     if "GITLAB_CI" in os.environ:
         try:
-            run_command([
-                "sudo",
-                "sh",
-                "-c",
-                "echo 'module wireguard -p' > /sys/kernel/debug/dynamic_debug/control",
-            ])
+            run_command(
+                [
+                    "sudo",
+                    "sh",
+                    "-c",
+                    "echo 'module wireguard -p' > /sys/kernel/debug/dynamic_debug/control",
+                ]
+            )
         except subprocess.CalledProcessError as e:
             print(f"Could not disable WireGuard dynamic debug: {e}")
 
@@ -517,9 +521,7 @@ def quick_restart_container(names: List[str], env=None):
                 # Recreate only the failed services, not their healthy dependencies
                 # (which include the slow-to-boot VMs).
                 "--no-deps",
-            ]
-            + names
-            + ["--quiet-pull"],
+            ] + names + ["--quiet-pull"],
             env=env,
         )
     except subprocess.CalledProcessError as e:
@@ -617,15 +619,17 @@ def generate_grpc(path):
         )
         print("\n\tuv run ./run_local.py --notests\n")
         raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), path)
-    run_command([
-        "python3",
-        "-m",
-        "grpc_tools.protoc",
-        f"-I{include}",
-        "--python_out=./bin/grpc_protobuf/",
-        "--grpc_python_out=./bin/grpc_protobuf",
-        path,
-    ])
+    run_command(
+        [
+            "python3",
+            "-m",
+            "grpc_tools.protoc",
+            f"-I{include}",
+            "--python_out=./bin/grpc_protobuf/",
+            "--grpc_python_out=./bin/grpc_protobuf",
+            path,
+        ]
+    )
 
 
 def restart():

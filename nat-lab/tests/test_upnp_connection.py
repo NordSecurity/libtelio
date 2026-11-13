@@ -82,10 +82,12 @@ async def test_upnp_route_removed(
                 )
             )
 
-            await asyncio.gather(*[
-                temp_exit_stack.enter_async_context(alpha_gw_router.reset_upnpd()),
-                temp_exit_stack.enter_async_context(beta_gw_router.reset_upnpd()),
-            ])
+            await asyncio.gather(
+                *[
+                    temp_exit_stack.enter_async_context(alpha_gw_router.reset_upnpd()),
+                    temp_exit_stack.enter_async_context(beta_gw_router.reset_upnpd()),
+                ]
+            )
 
             try:
                 await ping(alpha_conn.connection, beta.ip_addresses[0], 15)
@@ -99,22 +101,26 @@ async def test_upnp_route_removed(
                 await asyncio.wait_for(task, 1)
 
             direct_events = await exit_stack.enter_async_context(
-                run_async_contexts([
-                    alpha_client.events.wait_for_event_peer(
-                        beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
-                    ),
-                    beta_client.events.wait_for_event_peer(
-                        alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
-                    ),
-                ])
+                run_async_contexts(
+                    [
+                        alpha_client.events.wait_for_event_peer(
+                            beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
+                        ),
+                        beta_client.events.wait_for_event_peer(
+                            alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
+                        ),
+                    ]
+                )
             )
 
         await asyncio.gather(*direct_events)
 
-        await asyncio.gather(*[
-            ping(beta_conn.connection, alpha.ip_addresses[0]),
-            ping(alpha_conn.connection, beta.ip_addresses[0]),
-        ])
+        await asyncio.gather(
+            *[
+                ping(beta_conn.connection, alpha.ip_addresses[0]),
+                ping(alpha_conn.connection, beta.ip_addresses[0]),
+            ]
+        )
 
 
 @pytest.mark.asyncio
@@ -173,9 +179,9 @@ async def test_upnp_without_support(
         env = await exit_stack.enter_async_context(
             setup_environment(exit_stack, [alpha_setup_params, beta_setup_params])
         )
-        (alpha_node, beta_node) = env.nodes
-        (alpha_client, beta_client) = env.clients
-        (alpha_conn_mgr, beta_conn_mgr) = env.connections
+        alpha_node, beta_node = env.nodes
+        alpha_client, beta_client = env.clients
+        alpha_conn_mgr, beta_conn_mgr = env.connections
 
         await asyncio.gather(
             alpha_client.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
@@ -251,8 +257,8 @@ async def test_upnp_port_lease_duration(
         env = await setup_mesh_nodes(
             exit_stack, [alpha_setup_params, beta_setup_params]
         )
-        (alpha_client, _) = env.clients
-        (alpha_conn_mgr, _) = env.connections
+        alpha_client, _ = env.clients
+        alpha_conn_mgr, _ = env.connections
         alpha_conn = alpha_conn_mgr.connection
 
         upnpc_cmd = await execute_upnpc_with_retry(alpha_conn)

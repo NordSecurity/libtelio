@@ -151,11 +151,13 @@ async def check_gateway_and_client_ip(
         f"Client device has wrong public IP when connected to VPN: {client_ip}. "
         f"Expected value: {expected_ip}"
     )
-    luci_ui_response = await client_connection.create_process([
-        "sh",
-        "-c",
-        f'curl -s -o /dev/null -w "%{{http_code}}" http://{LAN_ADDR_MAP[gw_tag]["primary"]}/',
-    ]).execute()
+    luci_ui_response = await client_connection.create_process(
+        [
+            "sh",
+            "-c",
+            f'curl -s -o /dev/null -w "%{{http_code}}" http://{LAN_ADDR_MAP[gw_tag]["primary"]}/',
+        ]
+    ).execute()
     luci_ui_response_status = luci_ui_response.get_stdout().strip()
     assert (
         luci_ui_response_status == "200"
@@ -344,31 +346,37 @@ async def test_openwrt_ip_leaks(
         async with nordvpnlite.start():
             log.debug("NordVPN Lite started, waiting for connected vpn state...")
             await nordvpnlite.wait_for_vpn_connected_state()
-            async with photo_album_connection.create_process([
-                "tcpdump",
-                "--immediate-mode",
-                "-l",
-                "-i",
-                "eth0",
-                "-nn",
-                "not arp",
-            ]).run() as tcp_dump:
+            async with photo_album_connection.create_process(
+                [
+                    "tcpdump",
+                    "--immediate-mode",
+                    "-l",
+                    "-i",
+                    "eth0",
+                    "-nn",
+                    "not arp",
+                ]
+            ).run() as tcp_dump:
                 await ping(gateway_connection, PHOTO_ALBUM_IP)
                 await ping(client_connection, PHOTO_ALBUM_IP)
                 # wrapping into asyncio.wait_for as BusyBox nc doesn't support timeouts
                 await asyncio.wait_for(
-                    gateway_connection.create_process([
-                        "sh",
-                        "-c",
-                        f"echo -n | nc {PHOTO_ALBUM_IP} 80 >/dev/null 2>&1",
-                    ]).execute(),
+                    gateway_connection.create_process(
+                        [
+                            "sh",
+                            "-c",
+                            f"echo -n | nc {PHOTO_ALBUM_IP} 80 >/dev/null 2>&1",
+                        ]
+                    ).execute(),
                     timeout=3,
                 )
-                await client_connection.create_process([
-                    "bash",
-                    "-c",
-                    f"echo -n | nc -N {PHOTO_ALBUM_IP} 80 >/dev/null 2>&1",
-                ]).execute()
+                await client_connection.create_process(
+                    [
+                        "bash",
+                        "-c",
+                        f"echo -n | nc -N {PHOTO_ALBUM_IP} 80 >/dev/null 2>&1",
+                    ]
+                ).execute()
                 # send udp packet from openwrt client device
                 await client_connection.create_process(
                     ["bash", "-c", f"echo 'ping' | nc -u -w 1 {PHOTO_ALBUM_IP} 12345"]
@@ -730,20 +738,22 @@ async def renew_dhcp_lease(
     `-O mtu` makes udhcpc request option 26 in the parameter request list (as dhclient and
     NetworkManager do); dnsmasq only sends the option when it is requested.
     """
-    await client_connection.create_process([
-        "busybox",
-        "udhcpc",
-        "-i",
-        interface,
-        "-n",
-        "-q",
-        "-t",
-        "10",
-        "-O",
-        "mtu",
-        "-s",
-        "/opt/bin/udhcpc.script",
-    ]).execute()
+    await client_connection.create_process(
+        [
+            "busybox",
+            "udhcpc",
+            "-i",
+            interface,
+            "-n",
+            "-q",
+            "-t",
+            "10",
+            "-O",
+            "mtu",
+            "-s",
+            "/opt/bin/udhcpc.script",
+        ]
+    ).execute()
 
 
 @pytest.mark.asyncio

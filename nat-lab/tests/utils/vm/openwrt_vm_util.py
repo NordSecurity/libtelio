@@ -127,11 +127,13 @@ class _OpkgPackageManager(_OpenwrtPackageManager):
         ).execute()
 
     async def _add_custom_feed(self) -> None:
-        await self._conn.create_process([
-            "sh",
-            "-c",
-            f'echo "src/gz nordvpn {self._cfg.feed_url}" > {CUSTOM_FEEDS_CONF}',
-        ]).execute()
+        await self._conn.create_process(
+            [
+                "sh",
+                "-c",
+                f'echo "src/gz nordvpn {self._cfg.feed_url}" > {CUSTOM_FEEDS_CONF}',
+            ]
+        ).execute()
 
     async def _update_and_install(self) -> None:
         await self._conn.create_process(["opkg", "update"]).execute()
@@ -176,11 +178,13 @@ class _ApkPackageManager(_OpenwrtPackageManager):
         await self._conn.create_process(
             ["mkdir", "-p", "/etc/apk/repositories.d"]
         ).execute()
-        await self._conn.create_process([
-            "sh",
-            "-c",
-            f'echo "{self._cfg.feed_url}/packages.adb" > /etc/apk/repositories.d/nordvpn.list',
-        ]).execute()
+        await self._conn.create_process(
+            [
+                "sh",
+                "-c",
+                f'echo "{self._cfg.feed_url}/packages.adb" > /etc/apk/repositories.d/nordvpn.list',
+            ]
+        ).execute()
 
     async def _update_and_install(self) -> None:
         await self._conn.create_process(["apk", "update"]).execute()

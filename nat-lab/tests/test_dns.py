@@ -1141,14 +1141,16 @@ async def test_dns_ttl_value() -> None:
         await client_alpha.enable_magic_dns([DNS_SERVER_2_IP, DNS_SERVER_1_IP])
         await asyncio.sleep(1)
 
-        process = await connection_alpha.create_process([
-            "dig",
-            "+noall",
-            "+nocmd",
-            "+answer",
-            "alpha.nord",
-            "@100.64.0.2",
-        ]).execute()
+        process = await connection_alpha.create_process(
+            [
+                "dig",
+                "+noall",
+                "+nocmd",
+                "+answer",
+                "alpha.nord",
+                "@100.64.0.2",
+            ]
+        ).execute()
 
         dig_stdout = process.get_stdout()
         dig_stderr = process.get_stderr()

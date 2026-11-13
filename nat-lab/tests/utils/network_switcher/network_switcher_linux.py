@@ -14,15 +14,17 @@ class NetworkSwitcherLinux(NetworkSwitcher):
         await self._connection.create_process(
             ["ip", "route", "delete", "10.0.0.0/16"]
         ).execute()
-        await self._connection.create_process([
-            "ip",
-            "route",
-            "add",
-            "10.0.0.0/16",
-            "via",
-            GW_ADDR_MAP[self._connection.tag]["primary"],
-            "enp0s3",
-        ]).execute()
+        await self._connection.create_process(
+            [
+                "ip",
+                "route",
+                "add",
+                "10.0.0.0/16",
+                "via",
+                GW_ADDR_MAP[self._connection.tag]["primary"],
+                "enp0s3",
+            ]
+        ).execute()
 
     async def switch_to_secondary_network(self) -> None:
         if GW_ADDR_MAP[self._connection.tag]["secondary"] == "":
@@ -31,12 +33,14 @@ class NetworkSwitcherLinux(NetworkSwitcher):
         await self._connection.create_process(
             ["ip", "route", "delete", "10.0.0.0/16"]
         ).execute()
-        await self._connection.create_process([
-            "ip",
-            "route",
-            "add",
-            "10.0.0.0/16",
-            "via",
-            GW_ADDR_MAP[self._connection.tag]["secondary"],
-            "enp0s4",
-        ]).execute()
+        await self._connection.create_process(
+            [
+                "ip",
+                "route",
+                "add",
+                "10.0.0.0/16",
+                "via",
+                GW_ADDR_MAP[self._connection.tag]["secondary"],
+                "enp0s4",
+            ]
+        ).execute()

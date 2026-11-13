@@ -237,11 +237,13 @@ class Interface:
         ).execute()
 
         # wait for interface to appear in the list
-        while not bool([
-            iface
-            for iface in await Interface.get_enabled_network_interfaces(connection)
-            if self.name == iface.name and iface.ipv4
-        ]):
+        while not bool(
+            [
+                iface
+                for iface in await Interface.get_enabled_network_interfaces(connection)
+                if self.name == iface.name and iface.ipv4
+            ]
+        ):
             await asyncio.sleep(0.5)
 
 
@@ -284,16 +286,18 @@ class NetworkSwitcherWindows(NetworkSwitcher):
         """Set default route via Linux VM @ $LINUX_VM_PRIMARY_GATEWAY"""
 
         await self._delete_existing_routes()
-        await self._connection.create_process([
-            "netsh",
-            "interface",
-            "ipv4",
-            "add",
-            "route",
-            "0.0.0.0/0",
-            self._primary_interface.name,
-            f"nexthop={config.GW_ADDR_MAP[self._connection.tag]['primary']}",
-        ]).execute()
+        await self._connection.create_process(
+            [
+                "netsh",
+                "interface",
+                "ipv4",
+                "add",
+                "route",
+                "0.0.0.0/0",
+                self._primary_interface.name,
+                f"nexthop={config.GW_ADDR_MAP[self._connection.tag]['primary']}",
+            ]
+        ).execute()
 
         if not await CommandGrepper(
             self._connection,
@@ -317,16 +321,18 @@ class NetworkSwitcherWindows(NetworkSwitcher):
         """Set default route via Linux VM @ $LINUX_VM_SECONDARY_GATEWAY"""
 
         await self._delete_existing_routes()
-        await self._connection.create_process([
-            "netsh",
-            "interface",
-            "ipv4",
-            "add",
-            "route",
-            "0.0.0.0/0",
-            self._secondary_interface.name,
-            f"nexthop={config.GW_ADDR_MAP[self._connection.tag]['secondary']}",
-        ]).execute()
+        await self._connection.create_process(
+            [
+                "netsh",
+                "interface",
+                "ipv4",
+                "add",
+                "route",
+                "0.0.0.0/0",
+                self._secondary_interface.name,
+                f"nexthop={config.GW_ADDR_MAP[self._connection.tag]['secondary']}",
+            ]
+        ).execute()
 
         if not await CommandGrepper(
             self._connection,

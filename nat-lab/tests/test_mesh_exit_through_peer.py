@@ -243,12 +243,12 @@ async def test_ipv6_exit_node(
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        (alpha, beta) = api.default_config_two_nodes(
+        alpha, beta = api.default_config_two_nodes(
             alpha_ip_stack=IPStack.IPv4v6,
             beta_ip_stack=exit_ip_stack,
             allow_peer_traffic_routing=True,
         )
-        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+        connection_alpha, alpha_conn_tracker = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 alpha_connection_tag,
                 generate_connection_tracker_config(
@@ -258,7 +258,7 @@ async def test_ipv6_exit_node(
                 ),
             )
         )
-        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+        connection_beta, beta_conn_tracker = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
                 generate_connection_tracker_config(

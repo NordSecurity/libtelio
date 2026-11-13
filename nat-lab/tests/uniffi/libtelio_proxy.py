@@ -1,6 +1,6 @@
 import asyncio
 import os
-import Pyro5.errors  # type:ignore
+import Pyro5.errors  # type: ignore
 import sys
 import tests.uniffi.telio_bindings as libtelio
 import time
@@ -63,7 +63,7 @@ class LibtelioProxy:
             fn_res = f(remote)
             if fn_res is None:
                 return None
-            (res, err, backtrace) = fn_res
+            res, err, backtrace = fn_res
             if err is not None:
                 raise LibtelioError(
                     err, [BacktraceLocation(**fields) for fields in backtrace]

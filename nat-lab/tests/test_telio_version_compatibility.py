@@ -124,7 +124,7 @@ async def test_connect_different_telio_version_through_relay(
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        (alpha, beta) = api.default_config_two_nodes(
+        alpha, beta = api.default_config_two_nodes(
             alpha_ip_stack=alpha_ip_stack, beta_ip_stack=IPStack.IPv4
         )
 
@@ -173,11 +173,13 @@ async def test_connect_different_telio_version_through_relay(
 
         beta_router = new_router(beta_conn, beta.ip_stack)
         beta_client_v3_6 = await exit_stack.enter_async_context(
-            beta_conn.create_process([
-                "/opt/bin/tcli-3.6",
-                "--less-spam",
-                '-f { "paths": { "priority": ["relay", "udp-hole-punch"]} }',
-            ]).run(on_stdout_stderr, on_stdout_stderr)
+            beta_conn.create_process(
+                [
+                    "/opt/bin/tcli-3.6",
+                    "--less-spam",
+                    '-f { "paths": { "priority": ["relay", "udp-hole-punch"]} }',
+                ]
+            ).run(on_stdout_stderr, on_stdout_stderr)
         )
         await beta_client_v3_6.wait_stdin_ready()
         await beta_client_v3_6.escape_and_write_stdin(
@@ -187,11 +189,13 @@ async def test_connect_different_telio_version_through_relay(
         await beta_router.setup_interface(beta.ip_addresses)
         await beta_router.create_meshnet_route()
 
-        await beta_client_v3_6.escape_and_write_stdin([
-            "mesh",
-            "config",
-            shlex.quote(backport_config(api.get_meshnet_config(beta.id))),
-        ])
+        await beta_client_v3_6.escape_and_write_stdin(
+            [
+                "mesh",
+                "config",
+                shlex.quote(backport_config(api.get_meshnet_config(beta.id))),
+            ]
+        )
 
         await alpha_client.events.wait_for_state_on_any_derp([RelayState.CONNECTED])
         await alpha_client.events.wait_for_state_peer(

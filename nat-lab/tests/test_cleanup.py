@@ -44,8 +44,7 @@ async def test_get_network_interface_tunnel_keys(adapter_type, name) -> None:
         assert [f"{WINDOWS_NETWORK_ADAPTER_REGISTRY_KEY}\\0003"] == keys
 
         assert (
-            name
-            in (
+            name in (
                 await connection.create_process(
                     ["reg", "query", keys[0]],
                     quiet=True,

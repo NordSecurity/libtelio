@@ -164,13 +164,15 @@ class SshConnection(Connection):
                             log.error(nc.get_stderr())
 
                         async def print_event_log(log_name: str):
-                            qga = await conn.create_process([
-                                "python3",
-                                "/run/qga.py",
-                                "powershell",
-                                "-Command",
-                                f"Get-EventLog -LogName {log_name} -Newest 40 | format-table -wrap",
-                            ]).execute()
+                            qga = await conn.create_process(
+                                [
+                                    "python3",
+                                    "/run/qga.py",
+                                    "powershell",
+                                    "-Command",
+                                    f"Get-EventLog -LogName {log_name} -Newest 40 | format-table -wrap",
+                                ]
+                            ).execute()
                             log.error("Windows VM {%s} Event Log: {%s}:", log_name, tag)
                             log.error(qga.get_stdout())
                             log.error(qga.get_stderr())
@@ -231,8 +233,7 @@ class SshConnection(Connection):
             await utils_mac.copy_binaries(self._connection, self)
         elif (
             self.target_os is TargetOS.Linux  # type: ignore[redundant-expr]
-            and self.tag
-            in [
+            and self.tag in [
                 ConnectionTag.VM_OPENWRT_GW_1,
                 ConnectionTag.VM_OPENWRT_GW_3,
             ]

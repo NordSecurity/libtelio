@@ -55,11 +55,13 @@ async def test_mesh_off(direct) -> None:
 
         # Checking if no peer is left after turning mesh net off
         # wg show outputs lines that start with the string "peer:" when any peer is present
-        process = await connection_alpha.create_process([
-            "wg",
-            "show",
-            "tun10",
-        ]).execute()
+        process = await connection_alpha.create_process(
+            [
+                "wg",
+                "show",
+                "tun10",
+            ]
+        ).execute()
 
         wg_show_stdout = process.get_stdout()
 

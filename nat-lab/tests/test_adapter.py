@@ -38,11 +38,13 @@ STATE_POLL_INTERVAL_S = 0.5
 
 async def get_interface_state(client_conn, client) -> AdapterState | None:
     itf_name = client.get_router().get_interface_name()
-    process = await client_conn.create_process([
-        "powershell",
-        "-Command",
-        f'(Get-NetAdapter | Where-Object {{$_.Name -eq "{itf_name}"}}).Status',
-    ]).execute()
+    process = await client_conn.create_process(
+        [
+            "powershell",
+            "-Command",
+            f'(Get-NetAdapter | Where-Object {{$_.Name -eq "{itf_name}"}}).Status',
+        ]
+    ).execute()
     output = process.get_stdout()
     state_str = output.strip().lower()
 
@@ -81,12 +83,14 @@ async def wait_for_interface_state(client_conn, client, expected: AdapterState) 
 
 async def get_interface_mtu(client_conn, client, address_family: str) -> int:
     itf_name = client.get_router().get_interface_name()
-    process = await client_conn.create_process([
-        "powershell",
-        "-Command",
-        f'(Get-NetIPInterface -InterfaceAlias "{itf_name}"'
-        f" -AddressFamily {address_family}).NlMtu",
-    ]).execute()
+    process = await client_conn.create_process(
+        [
+            "powershell",
+            "-Command",
+            f'(Get-NetIPInterface -InterfaceAlias "{itf_name}"'
+            f" -AddressFamily {address_family}).NlMtu",
+        ]
+    ).execute()
     output = process.get_stdout().strip()
 
     if not output.isdigit():
@@ -199,10 +203,12 @@ async def test_adapter_gone_event(
             event,
         )
 
-    client.allow_errors([
-        "neptun::device.*Fatal read error on tun interface",
-        "telio_wg::adapter::linux_native_wg.*LinuxNativeWg: \\[GET01\\] Unable to get interface from WireGuard. Make sure it exists and you have permissions to access it.",
-    ])
+    client.allow_errors(
+        [
+            "neptun::device.*Fatal read error on tun interface",
+            "telio_wg::adapter::linux_native_wg.*LinuxNativeWg: \\[GET01\\] Unable to get interface from WireGuard. Make sure it exists and you have permissions to access it.",
+        ]
+    )
 
 
 @pytest.mark.parametrize(
@@ -240,20 +246,24 @@ async def test_adapter_service_loading(
     connection = managers[0].connection
 
     try:
-        await connection.create_process([
-            "sc",
-            "delete",
-            "WireGuard",
-        ]).execute()
+        await connection.create_process(
+            [
+                "sc",
+                "delete",
+                "WireGuard",
+            ]
+        ).execute()
     except ProcessExecError:
         pass
 
     try:
-        await connection.create_process([
-            "sc",
-            "delete",
-            "Wintun",
-        ]).execute()
+        await connection.create_process(
+            [
+                "sc",
+                "delete",
+                "Wintun",
+            ]
+        ).execute()
     except ProcessExecError:
         pass
 

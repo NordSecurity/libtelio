@@ -134,36 +134,40 @@ class LinuxRouter(Router):
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
             for network in VPN_TABLE_V4_NETWORKS:
                 try:
-                    await self._connection.create_process([
-                        "ip",
-                        "route",
-                        "add",
-                        network,
-                        "dev",
-                        self._interface_name,
-                        "table",
-                        ROUTING_TABLE_ID,
-                    ]).execute()
+                    await self._connection.create_process(
+                        [
+                            "ip",
+                            "route",
+                            "add",
+                            network,
+                            "dev",
+                            self._interface_name,
+                            "table",
+                            ROUTING_TABLE_ID,
+                        ]
+                    ).execute()
                 except ProcessExecError as exception:
                     if exception.stderr.find("File exists") < 0:
                         raise exception
                     log.warning(exception.stderr)
 
             try:
-                await self._connection.create_process([
-                    "ip",
-                    "rule",
-                    "add",
-                    "priority",
-                    ROUTING_PRIORITY,
-                    "not",
-                    "from",
-                    "all",
-                    "fwmark",
-                    FWMARK_VALUE,
-                    "lookup",
-                    ROUTING_TABLE_ID,
-                ]).execute()
+                await self._connection.create_process(
+                    [
+                        "ip",
+                        "rule",
+                        "add",
+                        "priority",
+                        ROUTING_PRIORITY,
+                        "not",
+                        "from",
+                        "all",
+                        "fwmark",
+                        FWMARK_VALUE,
+                        "lookup",
+                        ROUTING_TABLE_ID,
+                    ]
+                ).execute()
             except ProcessExecError as exception:
                 if exception.stderr.find("File exists") < 0:
                     raise exception
@@ -177,38 +181,42 @@ class LinuxRouter(Router):
                 config.LIBTELIO_IPV6_WG_SUBNET + "::1",
             ]:
                 try:
-                    await self._connection.create_process([
-                        "ip",
-                        "-6",
-                        "route",
-                        "add",
-                        network,
-                        "dev",
-                        self._interface_name,
-                        "table",
-                        ROUTING_TABLE_ID,
-                    ]).execute()
+                    await self._connection.create_process(
+                        [
+                            "ip",
+                            "-6",
+                            "route",
+                            "add",
+                            network,
+                            "dev",
+                            self._interface_name,
+                            "table",
+                            ROUTING_TABLE_ID,
+                        ]
+                    ).execute()
                 except ProcessExecError as exception:
                     if exception.stderr.find("File exists") < 0:
                         raise exception
                     log.warning(exception.stderr)
 
             try:
-                await self._connection.create_process([
-                    "ip",
-                    "-6",
-                    "rule",
-                    "add",
-                    "priority",
-                    ROUTING_PRIORITY,
-                    "not",
-                    "from",
-                    "all",
-                    "fwmark",
-                    FWMARK_VALUE,
-                    "lookup",
-                    ROUTING_TABLE_ID,
-                ]).execute()
+                await self._connection.create_process(
+                    [
+                        "ip",
+                        "-6",
+                        "rule",
+                        "add",
+                        "priority",
+                        ROUTING_PRIORITY,
+                        "not",
+                        "from",
+                        "all",
+                        "fwmark",
+                        FWMARK_VALUE,
+                        "lookup",
+                        ROUTING_TABLE_ID,
+                    ]
+                ).execute()
             except ProcessExecError as exception:
                 if exception.stderr.find("File exists") < 0:
                     raise exception

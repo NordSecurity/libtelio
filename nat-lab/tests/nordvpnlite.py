@@ -501,11 +501,13 @@ class NordVpnLite:
 
     async def config_exists(self, path: Path) -> bool:
         try:
-            await self.connection.create_process([
-                "test",
-                "-s",
-                str(path),
-            ]).execute()
+            await self.connection.create_process(
+                [
+                    "test",
+                    "-s",
+                    str(path),
+                ]
+            ).execute()
             return True
         except ProcessExecError as exc:
             assert (exc.returncode, exc.stdout, exc.stderr) == (1, "", "")
