@@ -44,7 +44,7 @@ dependencies = [
     "pathspec==1.1.1",
     "platformdirs==4.2.2",
     "pluggy==1.5.0",
-    "propcache==0.2.0",
+    "propcache==0.5.4",
     "protobuf==6.30.2",
     "psutil==6.1.0",
     "py==1.11.0",
