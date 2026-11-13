@@ -4797,6 +4797,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "telio-memtrack"
+version = "0.1.0"
+
+[[package]]
 name = "telio-model"
 version = "0.1.0"
 dependencies = [
