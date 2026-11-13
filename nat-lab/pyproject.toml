@@ -70,7 +70,7 @@ dependencies = [
     "six==1.16.0",
     "tomli==2.0.2",
     "tomlkit==0.15.2",
-    "types-protobuf==6.30.2.20250703",
+    "types-protobuf==7.35.1.20260906",
     "types-psutil==7.2.2.20261111",
     "types-pyyaml==6.0.12.20240917",
     "typing-extensions==4.12.2",

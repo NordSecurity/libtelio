@@ -1159,7 +1159,7 @@ requires-dist = [
     { name = "six", specifier = "==1.16.0" },
     { name = "tomli", specifier = "==2.0.2" },
     { name = "tomlkit", specifier = "==0.15.2" },
-    { name = "types-protobuf", specifier = "==6.30.2.20250703" },
+    { name = "types-protobuf", specifier = "==7.35.1.20260906" },
     { name = "types-psutil", specifier = "==7.2.2.20261111" },
     { name = "types-pyyaml", specifier = "==6.0.12.20240917" },
     { name = "typing-extensions", specifier = "==4.12.2" },
@@ -1839,11 +1839,11 @@ wheels = [
 
 [[package]]
 name = "types-protobuf"
-version = "6.30.2.20250703"
+version = "7.35.1.20260906"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/dc/54/d63ce1eee8e93c4d710bbe2c663ec68e3672cf4f2fca26eecd20981c0c5d/types_protobuf-6.30.2.20250703.tar.gz", hash = "sha256:609a974754bbb71fa178fc641f51050395e8e1849f49d0420a6281ed8d1ddf46", size = 62300, upload-time = "2025-07-03T03:14:05.74Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e1/6c/e3e5b3e10bc328126a39637c138f9ebfd734bf14342b9f3540039b4ab995/types_protobuf-7.35.1.20260906.tar.gz", hash = "sha256:efd1a3862d4c967dad5512ef8d56b1530ac84f182c41735b94004756518c4998", size = 69895, upload-time = "2026-09-06T06:35:28.308Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7e/2b/5d0377c3d6e0f49d4847ad2c40629593fee4a5c9ec56eba26a15c708fbc0/types_protobuf-6.30.2.20250703-py3-none-any.whl", hash = "sha256:fa5aff9036e9ef432d703abbdd801b436a249b6802e4df5ef74513e272434e57", size = 76489, upload-time = "2025-07-03T03:14:04.453Z" },
+    { url = "https://files.pythonhosted.org/packages/44/4e/f63e826c68f77ef875506d72f225918800346545ee99847bc28f3394f18d/types_protobuf-7.35.1.20260906-py3-none-any.whl", hash = "sha256:5155e48569e0dabff303fdf578db96cd31ea9a4a63b18018a4ceac6b0ae17462", size = 86419, upload-time = "2026-09-06T06:35:27.247Z" },
 ]
 
 [[package]]
