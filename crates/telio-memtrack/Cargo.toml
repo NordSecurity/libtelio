@@ -1,0 +1,18 @@
+[package]
+name = "telio-memtrack"
+version = "0.1.0"
+edition = "2021"
+# Consumed via git dependency by libraries outside the libtelio workspace
+# libvinis MSRV (1.89) is lower than libtelio's toolchain (1.99)
+rust-version = "1.89"
+license = "Apache-2.0"
+repository = "https://github.com/NordSecurity/libtelio"
+publish = false
+
+# Intentionally no dependencies: this crate is compiled into every consuming cdylib
+
+[[test]]
+name = "memtrack-test"
+# Run tests with custom main() in one thread, otherwise other tests
+# could allocate memory at the same time and break the counter checks
+harness = false
