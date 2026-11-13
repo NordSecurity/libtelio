@@ -1160,7 +1160,7 @@ requires-dist = [
     { name = "tomli", specifier = "==2.0.2" },
     { name = "tomlkit", specifier = "==0.15.2" },
     { name = "types-protobuf", specifier = "==6.30.2.20250703" },
-    { name = "types-psutil", specifier = "==6.1.0.20241022" },
+    { name = "types-psutil", specifier = "==7.2.2.20261111" },
     { name = "types-pyyaml", specifier = "==6.0.12.20240917" },
     { name = "typing-extensions", specifier = "==4.12.2" },
     { name = "typing-inspect", specifier = "==0.9.0" },
@@ -1862,11 +1862,11 @@ wheels = [
 
 [[package]]
 name = "types-psutil"
-version = "6.1.0.20241022"
+version = "7.2.2.20261111"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/01/e7/80affd4101d361056ad29cd4953502c17ac8c012c7bb010414fca45a2d03/types-psutil-6.1.0.20241022.tar.gz", hash = "sha256:aa2a6d4accea4b2ef1feee82959d9d9e99568fefa3c872bbc38c21c39dacaf1c", size = 15360, upload-time = "2024-10-22T02:44:36.152Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9c/30/9eb9f10b074aa0cb3456ad3469716169d0af6de58096719f31cb065aac68/types_psutil-7.2.2.20261111.tar.gz", hash = "sha256:d677119c44fb80cc9be41d8ac731f08bf89974bb1daa49b6688665a9d7224f42", size = 27439, upload-time = "2026-11-11T08:32:33.155Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1b/d1/f85f5a6e7635c8cb08265b3f88a6b3435443ed9db9adb0aee7d70f1635f8/types_psutil-6.1.0.20241022-py3-none-any.whl", hash = "sha256:df526391733c5ad8bfe1fe98b43e5ac2a1e0ce5d398574575dabcc7fabc9ea54", size = 18649, upload-time = "2024-10-22T02:44:34.558Z" },
+    { url = "https://files.pythonhosted.org/packages/c1/c2/6a9d0b3e4f55ad008891dda1f9316b077f28c22274c58869f8047f7d6b74/types_psutil-7.2.2.20261111-py3-none-any.whl", hash = "sha256:054f7b635fc908d3d27e49e8d274fbfed115a1a859f2edeae17519c0238286a1", size = 33394, upload-time = "2026-11-11T08:32:32.097Z" },
 ]
 
 [[package]]
