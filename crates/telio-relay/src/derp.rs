@@ -13,6 +13,7 @@ pub mod proto;
 use async_trait::async_trait;
 use futures::{future::select_all, Future};
 use std::collections::{HashMap, HashSet};
+use std::convert::TryFrom;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
@@ -38,8 +39,8 @@ use telio_utils::{
 use tokio::sync::mpsc::OwnedPermit;
 use tokio::{task::JoinHandle, time::sleep};
 
-use crypto_box::aead::{
-    generic_array::{typenum::Unsigned, GenericArray},
+use aead::{
+    array::{typenum::Unsigned, Array},
     AeadCore, Error, Payload,
 };
 use telio_crypto::chachabox::ChaChaBox;
@@ -434,7 +435,7 @@ impl DerpRelay {
             *d
         } else {
             telio_log_error!("Invalid buffer");
-            return Err(crypto_box::aead::Error);
+            return Err(aead::Error);
         }) == PacketTypeRelayed::Data
         {
             return Ok(data.to_vec());
@@ -485,7 +486,7 @@ impl DerpRelay {
             *d
         } else {
             telio_log_error!("Invalid buffer");
-            return Err(crypto_box::aead::Error);
+            return Err(aead::Error);
         }) {
             PacketTypeRelayed::Data => {
                 telio_log_trace!(
@@ -496,10 +497,11 @@ impl DerpRelay {
             }
             PacketTypeRelayed::Encrypted => {
                 // Extract nonce always with exactly 24 bytes from byte 1 to 24
-                let nonce = GenericArray::from_slice(
+                let nonce = <&Array<_, _>>::try_from(
                     data.get(DerpRelay::NONCE_BEGIN_POS..DerpRelay::NONCE_END_POS)
-                        .ok_or(crypto_box::aead::Error)?,
-                );
+                        .ok_or(aead::Error)?,
+                )
+                .map_err(|_| aead::Error)?;
                 telio_log_trace!(
                     "Rx encrypted data: {:?} ...",
                     &data.chunks(8).next().unwrap_or_default()
@@ -509,7 +511,7 @@ impl DerpRelay {
                 // what is data + ADD which always come appended to the end
                 let cipher_text = data
                     .get(DerpRelay::NONCE_END_POS..data.len())
-                    .ok_or(crypto_box::aead::Error)?;
+                    .ok_or(aead::Error)?;
 
                 let secret_box = ChaChaBox::new(&public_key, &secret_key);
 
@@ -533,7 +535,7 @@ impl DerpRelay {
             }
             _ => {
                 telio_log_error!("Malformed / Not encrypted package");
-                Err(crypto_box::aead::Error)
+                Err(aead::Error)
             }
         }
     }

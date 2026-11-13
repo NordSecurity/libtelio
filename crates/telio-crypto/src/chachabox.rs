@@ -1,9 +1,8 @@
 //! The module contains a replacement of the crypto_box::ChaChaBox using XChaCha20 which was
 //! removed from the new versions of the library.
 
-use aead::{Aead, AeadCore, KeyInit, Payload};
+use aead::{array::Array, Aead, AeadCore, KeyInit, Payload, TagPosition};
 use chacha20::{hchacha, R20};
-use chacha20poly1305::aead::generic_array::GenericArray;
 use chacha20poly1305::XChaCha20Poly1305;
 use curve25519_dalek::{scalar::clamp_integer, MontgomeryPoint, Scalar};
 use zeroize::Zeroizing;
@@ -14,14 +13,14 @@ use crate::{PublicKey, SecretKey};
 /// the [XChaCha20Poly1305] authenticated encryption cipher.
 pub struct ChaChaBox(XChaCha20Poly1305);
 
-type Nonce = GenericArray<u8, <XChaCha20Poly1305 as AeadCore>::NonceSize>;
+type Nonce = Array<u8, <XChaCha20Poly1305 as AeadCore>::NonceSize>;
 
 impl AeadCore for ChaChaBox {
     type NonceSize = <XChaCha20Poly1305 as AeadCore>::NonceSize;
 
     type TagSize = <XChaCha20Poly1305 as AeadCore>::TagSize;
 
-    type CiphertextOverhead = <XChaCha20Poly1305 as AeadCore>::CiphertextOverhead;
+    const TAG_POSITION: TagPosition = <XChaCha20Poly1305 as AeadCore>::TAG_POSITION;
 }
 
 impl ChaChaBox {
@@ -31,8 +30,9 @@ impl ChaChaBox {
         let shared_secret = Zeroizing::new(scalar_sk * MontgomeryPoint(public_key.0));
 
         // Use HChaCha20 to create a uniformly random key from the shared secret
-        Self(XChaCha20Poly1305::new(GenericArray::from_slice(
-            &hchacha::<R20>(&shared_secret.0.into(), &Default::default()),
+        Self(XChaCha20Poly1305::new(&hchacha::<R20>(
+            &shared_secret.0.into(),
+            &Array::default(),
         )))
     }
 
