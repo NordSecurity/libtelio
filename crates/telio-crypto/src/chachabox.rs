@@ -2,8 +2,8 @@
 //! removed from the new versions of the library.
 
 use aead::{Aead, AeadCore, KeyInit, Payload};
-use chacha20::{cipher::generic_array::GenericArray, hchacha};
-use chacha20poly1305::consts::U10;
+use chacha20::{hchacha, R20};
+use chacha20poly1305::aead::generic_array::GenericArray;
 use chacha20poly1305::XChaCha20Poly1305;
 use curve25519_dalek::{scalar::clamp_integer, MontgomeryPoint, Scalar};
 use zeroize::Zeroizing;
@@ -31,9 +31,8 @@ impl ChaChaBox {
         let shared_secret = Zeroizing::new(scalar_sk * MontgomeryPoint(public_key.0));
 
         // Use HChaCha20 to create a uniformly random key from the shared secret
-        Self(XChaCha20Poly1305::new(&hchacha::<U10>(
-            GenericArray::from_slice(&shared_secret.0),
-            &GenericArray::default(),
+        Self(XChaCha20Poly1305::new(GenericArray::from_slice(
+            &hchacha::<R20>(&shared_secret.0.into(), &Default::default()),
         )))
     }
 
