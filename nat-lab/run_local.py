@@ -99,6 +99,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="Run tests with 'android' mark (requires android-client-01 emulator)",
     )
     parser.add_argument(
+        "--openwrt",
+        action="store_true",
+        help="OpenWrt packages build, run tests with 'openwrt' mark",
+    )
+    parser.add_argument(
         "--linux-native", action="store_true", help="Run tests with 'linux_native' mark"
     )
     parser.add_argument(
@@ -165,6 +170,8 @@ def main() -> int:
             # Run windows tests on WinVM
             if args.windows:
                 run_build_command("windows", args)
+            if args.openwrt:
+                run_openwrt_build_commands(args)
             # Run nat-lab natively on macOS (TODO: Add windows support)
             if args.o == "darwin":
                 run_build_command("darwin", args)
@@ -279,6 +286,20 @@ def run_build_command(operating_system, args):
     run_command(command)
 
 
+OPENWRT_BUILDS = [("x86_64", "25.12.0"), ("mipsel", "24.10.4")]
+
+
+def run_openwrt_build_commands(args):
+    for arch, release in OPENWRT_BUILDS:
+        command = ["../../ci/build.sh", "--default", "openwrt", "--arch", arch]
+        if args.telio_debug:
+            command.append("--debug")
+        if args.restart:
+            command.append("--restart")
+        command.append("--ipk-package")
+        run_command(command, env={"LIBTELIO_ENV_OPENWRT_RELEASE_BUILD_TAG": release})
+
+
 def get_pytest_arguments(options) -> List[str]:
     args = []
 
@@ -299,21 +320,12 @@ def get_pytest_arguments(options) -> List[str]:
     if options.m:
         args.extend(["-m", options.m])
     else:
-        marks = (
-            "not nat and not windows and not mac and not linux_native and not long and"
-            " not moose and not android"
-        )
-        if options.windows:
-            marks = marks.replace("not windows", "windows")
-        if options.mac:
-            marks = marks.replace("not mac", "mac")
-        if options.android:
-            marks = marks.replace("not android", "android")
-        if options.linux_native:
-            marks = marks.replace("not linux_native", "linux_native")
-        if options.moose:
-            marks = marks.replace("and not moose", "")
-        args.extend(["-m", marks])
+        platforms = ["windows", "mac", "linux_native", "android", "openwrt"]
+        marks = [p if getattr(options, p) else f"not {p}" for p in platforms]
+        marks += ["not nat", "not long"]
+        if not options.moose:
+            marks.append("not moose")
+        args.extend(["-m", " and ".join(marks)])
 
     return args
 
