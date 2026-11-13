@@ -10,7 +10,7 @@ dependencies = [
     "astroid==3.2.2",
     "async-timeout==4.0.3",
     "asyncssh==2.21.0",
-    "attrs==24.2.0",
+    "attrs==26.1.0",
     "autoflake==2.3.1",
     "black==24.1.1",
     "certifi==2024.8.30",
