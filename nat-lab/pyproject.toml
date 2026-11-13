@@ -39,7 +39,7 @@ dependencies = [
     "mypy-extensions==1.0.0",
     "mypy==1.13.0",
     "orderly-set==5.2.3",
-    "packaging==24.1",
+    "packaging==26.3",
     "paho-mqtt==2.1.0",
     "pathspec==0.12.1",
     "platformdirs==4.2.2",
