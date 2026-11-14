@@ -351,19 +351,18 @@ impl DynamicWg {
 
     /// Set the (u)tun file descriptor to be used by the adapter
     pub async fn set_tun(&self, tun: Tun) -> Result<(), Error> {
-        task_exec!(&self.task, async move |rt| Ok(rt.set_tun(tun).await)).await??;
-        Ok(())
+        task_exec!(&self.task, async move |rt| rt.set_tun(tun).await).await?
     }
 }
 
 #[async_trait]
 impl WireGuard for DynamicWg {
     async fn get_interface(&self) -> Result<Interface, Error> {
-        Ok(task_exec!(&self.task, async move |s| Ok(s.interface.clone())).await?)
+        Ok(task_exec!(&self.task, async move |s| s.interface.clone()).await?)
     }
 
     async fn get_adapter_luid(&self) -> Result<u64, Error> {
-        Ok(task_exec!(&self.task, async move |s| Ok(s.adapter.get_adapter_luid())).await?)
+        Ok(task_exec!(&self.task, async move |s| s.adapter.get_adapter_luid()).await?)
     }
 
     async fn wait_for_listen_port(&self, d: Duration) -> Result<u16, Error> {
@@ -386,10 +385,10 @@ impl WireGuard for DynamicWg {
 
     async fn get_link_state(&self, key: PublicKey) -> Result<Option<LinkState>, Error> {
         Ok(task_exec!(&self.task, async move |s| {
-            Ok(match s.link_detection.as_ref() {
+            match s.link_detection.as_ref() {
                 Some(ld) => ld.get_link_state_for_downgrade(&key),
                 None => None,
-            })
+            }
         })
         .await?)
     }
@@ -399,7 +398,6 @@ impl WireGuard for DynamicWg {
             let mut to = s.interface.clone();
             to.private_key = Some(key);
             let _ = s.update(to, UpdateReason::Push).await;
-            Ok(())
         })
         .await?)
     }
@@ -409,13 +407,12 @@ impl WireGuard for DynamicWg {
             let mut to = s.interface.clone();
             to.fwmark = fwmark;
             let _ = s.update(to, UpdateReason::Push).await;
-            Ok(())
         })
         .await?)
     }
 
     async fn add_peer(&self, mut new_peer: Peer) -> Result<(), Error> {
-        Ok(task_exec!(&self.task, async move |s| {
+        task_exec!(&self.task, async move |s| {
             let mut to = s.interface.clone();
 
             // Check if there are any overlapping allowed IPs
@@ -452,7 +449,7 @@ impl WireGuard for DynamicWg {
             let _ = s.update(to, UpdateReason::Push).await;
             Ok(())
         })
-        .await?)
+        .await?
     }
 
     async fn del_peer(&self, key: PublicKey) -> Result<(), Error> {
@@ -460,7 +457,6 @@ impl WireGuard for DynamicWg {
             let mut to = s.interface.clone();
             to.peers.remove(&key);
             let _ = s.update(to, UpdateReason::Push).await;
-            Ok(())
         })
         .await?)
     }
@@ -468,16 +464,12 @@ impl WireGuard for DynamicWg {
     async fn drop_connected_sockets(&self) -> Result<(), Error> {
         Ok(task_exec!(&self.task, async move |s| {
             s.adapter.drop_connected_sockets().await;
-            Ok(())
         })
         .await?)
     }
 
     async fn time_since_last_rx(&self, public_key: PublicKey) -> Result<Option<Duration>, Error> {
-        Ok(task_exec!(&self.task, async move |s| Ok(
-            s.time_since_last_rx(public_key)
-        ))
-        .await?)
+        Ok(task_exec!(&self.task, async move |s| s.time_since_last_rx(public_key)).await?)
     }
 
     async fn stop(mut self) {
@@ -487,7 +479,6 @@ impl WireGuard for DynamicWg {
     async fn reset_existing_connections(&self, pubkey: PublicKey) -> Result<(), Error> {
         task_exec!(&self.task, async move |s| {
             s.adapter.inject_reset_packets(&pubkey).await;
-            Ok(())
         })
         .await?;
 
@@ -497,7 +488,6 @@ impl WireGuard for DynamicWg {
     async fn set_ip_stack(&self, ip_stack: Option<IpStack>) -> Result<(), Error> {
         Ok(task_exec!(&self.task, async move |s| {
             s.ip_stack = ip_stack;
-            Ok(())
         })
         .await?)
     }
@@ -506,12 +496,10 @@ impl WireGuard for DynamicWg {
         if let Some(mtu) = mtu {
             check_mtu(mtu)?;
         }
-        task_exec!(&self.task, async move |s| Ok(s
-            .adapter
-            .set_adapter_mtu(mtu)
-            .await))
-        .await??;
-        Ok(())
+        task_exec!(&self.task, async move |s| {
+            s.adapter.set_adapter_mtu(mtu).await
+        })
+        .await?
     }
 
     /// Ensure that adapter is UP or DOWN
@@ -525,7 +513,6 @@ impl WireGuard for DynamicWg {
                 .adapter
                 .ensure_expected_adapter_state(peers_cnt, is_meshnet_on)
                 .await;
-            Ok(())
         })
         .await?)
     }
@@ -1144,7 +1131,6 @@ pub mod tests {
                 let mut ifc = s.interface.clone();
                 ifc.listen_port = Some(port);
                 let _ = s.update(ifc, UpdateReason::Push).await;
-                Ok(())
             })
             .await?)
         }
@@ -1304,7 +1290,7 @@ pub mod tests {
             DEFAULT_POLLING_PERIOD_MS / DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS;
         /// Helper function to read WG polling period.
         async fn get_polling_period(wg: &DynamicWg) -> Duration {
-            task_exec!(&wg.task, async move |s| Ok(s.interval.period()))
+            task_exec!(&wg.task, async move |s| s.interval.period())
                 .await
                 .unwrap()
         }
@@ -1313,7 +1299,6 @@ pub mod tests {
             task_exec!(&wg.task, async move |s| {
                 let to = s.interface.clone();
                 let _ = s.update(to, UpdateReason::Push).await;
-                Ok(())
             })
             .await
             .unwrap();
@@ -1564,6 +1549,81 @@ pub mod tests {
         );
         adapter.lock().await.checkpoint();
         assert_eq!(ifa.clone(), wg.get_interface().await.unwrap());
+
+        adapter.lock().await.expect_stop().return_once(|| ());
+        wg.stop().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn wg_survives_duplicate_allowed_ips() {
+        let Env {
+            adapter,
+            wg,
+            event: _event,
+            ..
+        } = setup().await;
+
+        let allowed_ips = vec![IpNet::V4(
+            Ipv4Net::new(Ipv4Addr::new(10, 0, 0, 1), 32).unwrap(),
+        )];
+        let first = Peer {
+            public_key: SecretKey::gen().public(),
+            allowed_ips: allowed_ips.clone(),
+            ..Default::default()
+        };
+        let second = Peer {
+            public_key: SecretKey::gen().public(),
+            allowed_ips,
+            ..Default::default()
+        };
+
+        adapter.expect_send_uapi_cmd_generic_call(1).await;
+        wg.add_peer(first.clone()).await.unwrap();
+
+        let err = wg.add_peer(second.clone()).await.unwrap_err();
+        assert!(
+            matches!(err.variant(), ErrorVariant::DuplicateAllowedIPsError),
+            "unexpected error: {:?}",
+            err
+        );
+
+        let interface = wg
+            .get_interface()
+            .await
+            .expect("Wg task must survive a rejected peer");
+        assert_eq!(
+            interface.peers.keys().collect::<Vec<_>>(),
+            vec![&first.public_key]
+        );
+        adapter.lock().await.checkpoint();
+
+        adapter.expect_send_uapi_cmd_generic_call(1).await;
+        wg.del_peer(first.public_key).await.unwrap();
+        adapter.lock().await.checkpoint();
+
+        adapter.expect_send_uapi_cmd_generic_call(1).await;
+        wg.add_peer(second.clone()).await.unwrap();
+        assert_eq!(
+            wg.get_interface()
+                .await
+                .unwrap()
+                .peers
+                .keys()
+                .collect::<Vec<_>>(),
+            vec![&second.public_key]
+        );
+        adapter.lock().await.checkpoint();
+
+        adapter.expect_send_uapi_cmd_generic_call(1).await;
+        time::advance(Duration::from_millis(
+            DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS,
+        ))
+        .await;
+        task::yield_now().await;
+        wg.get_interface()
+            .await
+            .expect("Wg task must keep polling after a rejected peer");
+        adapter.lock().await.checkpoint();
 
         adapter.lock().await.expect_stop().return_once(|| ());
         wg.stop().await;

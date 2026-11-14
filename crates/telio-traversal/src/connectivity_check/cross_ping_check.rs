@@ -276,7 +276,7 @@ impl CrossPingCheckTrait for CrossPingCheck {
 
                 // Select most prefered endpoint candidate according to
                 // preference defined by compare_candidate_preference()
-                Ok(validated_candidates_per_peer
+                validated_candidates_per_peer
                     .into_iter()
                     .filter_map(|(pubkey, events)| {
                         events
@@ -284,7 +284,7 @@ impl CrossPingCheckTrait for CrossPingCheck {
                             .max_by(Self::compare_candidate_preference)
                             .map(|event| (pubkey, event))
                     })
-                    .collect())
+                    .collect()
             })
             .await
             .map_err(|e| e.into());
@@ -303,7 +303,6 @@ impl CrossPingCheckTrait for CrossPingCheck {
             for session in sessions {
                 session.handle_endpoint_successful_notification();
             }
-            Ok(())
         })
         .await
         .map_err(|e| e.into());
@@ -312,11 +311,9 @@ impl CrossPingCheckTrait for CrossPingCheck {
 
     async fn configure(&self, config: Option<Config>) -> Result<(), Error> {
         let _ = task_exec!(&self.task, async move |s| {
-            // FIXME: error handling with task_exec! seems to suck a lot. Need to fix that.
             s.configure(config).await.unwrap_or_else(|e| {
                 telio_log_warn!("Failed to send ping {:?}", e);
             });
-            Ok(())
         })
         .await;
         Ok(())
@@ -618,15 +615,15 @@ impl UpgradeController for CrossPingCheck {
         session: Session,
         public_key: PublicKey,
     ) -> Result<bool, Error> {
-        task_exec!(&self.task, async move |s| Ok(
+        task_exec!(&self.task, async move |s| {
             s.check_if_upgrade_is_allowed(session, public_key)
-        ))
+        })
         .await
         .map_err(|e| e.into())
     }
 
     async fn notify_failed_wg_connection(&self, public_key: PublicKey) -> Result<(), Error> {
-        let res: Result<(), Error> = task_exec!(&self.task, async move |s| {
+        task_exec!(&self.task, async move |s| {
             let sessions = s
                 .endpoint_connectivity_check_state
                 .values_mut()
@@ -646,9 +643,7 @@ impl UpgradeController for CrossPingCheck {
             }
             Ok(())
         })
-        .await
-        .map_err(|e| e.into());
-        res
+        .await?
     }
 }
 

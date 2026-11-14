@@ -80,7 +80,6 @@ impl<Wg: WireGuard> StunEndpointProvider<Wg> {
     pub async fn reconnect(&self) {
         let _ = task_exec!(&self.task, async move |s| {
             let _ = s.reconnect().await;
-            Ok(())
         })
         .await;
     }
@@ -238,15 +237,13 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
             }
 
             if s.stun_state == StunState::Paused {
-                return Ok(());
+                return;
             }
 
             // Update STUN state
             s.exponential_backoff.reset();
             s.transition_to_wait_for_wg();
             s.try_transition_to_searching_for_server().await;
-
-            Ok(())
         })
         .await;
     }
@@ -258,16 +255,17 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
     #[cfg(test)]
     pub async fn get_ext_socket_addr(&self) -> Option<SocketAddr> {
         task_exec!(&self.task, async move |s| {
-            s.sockets.as_ref().ok_or(()).and_then(
+            s.sockets.as_ref().and_then(
                 |StunSockets {
                      tun_socket_v4: _,
                      tun_socket_v6: _,
                      ext_socket,
-                 }| ext_socket.local_addr().map_err(|_| ()),
+                 }| ext_socket.local_addr().ok(),
             )
         })
         .await
         .ok()
+        .flatten()
     }
 }
 
@@ -280,7 +278,6 @@ impl<Wg: WireGuard, E: Backoff + 'static> EndpointProvider for StunEndpointProvi
     async fn subscribe_for_pong_events(&self, tx: chan::Tx<PongEvent>) {
         let _ = task_exec!(&self.task, async move |s| {
             s.pong_event = Some(tx);
-            Ok(())
         })
         .await;
     }
@@ -291,7 +288,6 @@ impl<Wg: WireGuard, E: Backoff + 'static> EndpointProvider for StunEndpointProvi
     ) {
         let _ = task_exec!(&self.task, async move |s| {
             s.change_event = Some(tx);
-            Ok(())
         })
         .await;
     }
@@ -315,16 +311,14 @@ impl<Wg: WireGuard, E: Backoff + 'static> EndpointProvider for StunEndpointProvi
                     telio_log_warn!("Starting session failed: {:?}", err)
                 }
             }
-
-            Ok(Ok(()))
         })
-        .await?
+        .await?;
+        Ok(())
     }
 
     async fn handle_endpoint_gone_notification(&self) {
         task_exec!(&self.task, async move |s| {
             s.stun_session = None;
-            Ok(())
         })
         .await
         .unwrap_or_default();
@@ -342,29 +336,26 @@ impl<Wg: WireGuard, E: Backoff + 'static> EndpointProvider for StunEndpointProvi
             public_key,
             session_id
         );
-        task_exec!(&self.task, async move |s| Ok(s
-            .send_ping(addr, session_id, &public_key)
-            .await))
+        task_exec!(&self.task, async move |s| {
+            s.send_ping(addr, session_id, &public_key).await
+        })
         .await?
     }
 
     async fn get_current_endpoints(&self) -> Option<Vec<EndpointCandidate>> {
-        task_exec!(&self.task, async move |s| Ok(Some(
-            s.last_candidates.clone()
-        )))
-        .await
-        .unwrap_or(None)
+        task_exec!(&self.task, async move |s| s.last_candidates.clone())
+            .await
+            .ok()
     }
 
     async fn pause(&self) {
         let _ = task_exec!(&self.task, async move |s| {
             if !s.is_battery_optimization_on {
                 telio_log_debug!("Skipping pause, battery optimization not set");
-                return Ok(());
+                return;
             }
             s.stun_state = StunState::Paused;
             s.current_timeout = PinnedSleep::new(STUN_TIMEOUT_PAUSED, ());
-            Ok(())
         })
         .await;
     }
@@ -376,17 +367,14 @@ impl<Wg: WireGuard, E: Backoff + 'static> EndpointProvider for StunEndpointProvi
                 s.transition_to_wait_for_wg();
                 s.try_transition_to_searching_for_server().await;
             }
-            Ok(())
         })
         .await;
     }
 
     async fn is_paused(&self) -> bool {
-        task_exec!(&self.task, async move |s| Ok(
-            s.stun_state == StunState::Paused
-        ))
-        .await
-        .unwrap_or(false)
+        task_exec!(&self.task, async move |s| s.stun_state == StunState::Paused)
+            .await
+            .unwrap_or(false)
     }
 }
 

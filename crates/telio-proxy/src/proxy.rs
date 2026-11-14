@@ -179,13 +179,13 @@ impl UdpProxy {
     /// Update configuration for the background task
     pub async fn configure(&self, config: Config) -> Result<(), Error> {
         let sockets = task_exec!(&self.task_ingress, async move |state| {
-            Ok(state.configure(config).await)
+            state.configure(config).await
         })
         .await??;
 
         task_exec!(&self.task_egress, async move |state| {
             state.reset_socket_limit().await;
-            Ok(state.configure(sockets).await)
+            state.configure(sockets).await
         })
         .await?
     }
@@ -207,7 +207,6 @@ impl UdpProxy {
     pub async fn on_network_change(&self) {
         let _ = task_exec!(&self.task_egress, async move |state| {
             state.reset_socket_limit().await;
-            Ok(())
         })
         .await;
     }
@@ -217,7 +216,7 @@ impl UdpProxy {
 impl Proxy for UdpProxy {
     async fn get_endpoint_map(&self) -> Result<EndpointMap, Error> {
         task_exec!(&self.task_egress, async move |state| {
-            Ok(state.get_endpoints_map().await)
+            state.get_endpoints_map().await
         })
         .await?
     }
@@ -232,7 +231,6 @@ impl Proxy for UdpProxy {
                 );
                 state.wg_addr = wg_addr;
             }
-            Ok(())
         })
         .await?;
         Ok(())
@@ -241,8 +239,8 @@ impl Proxy for UdpProxy {
     async fn mute_peer(&self, pk: PublicKey, dur: Option<Duration>) -> Result<(), Error> {
         task_exec!(&self.task_egress, async move |state| {
             match dur {
-                Some(d) => Ok(state.try_mute(&pk, d)),
-                None => Ok(state.try_unmute(&pk)),
+                Some(d) => state.try_mute(&pk, d),
+                None => state.try_unmute(&pk),
             }
         })
         .await?
@@ -679,11 +677,9 @@ mod tests {
             .await
             .expect("UdpProxy::configure() failed");
 
-        let egress_wg_addr = task_exec!(&ts.proxy.task_egress, async move |state| {
-            Ok(state.wg_addr)
-        })
-        .await
-        .expect("task_exec failed");
+        let egress_wg_addr = task_exec!(&ts.proxy.task_egress, async move |state| state.wg_addr)
+            .await
+            .expect("task_exec failed");
         assert_eq!(egress_wg_addr, Some(wg_addr));
 
         ts.relay.send(pks[0], DataMsg::new(b"data")).await;
@@ -712,7 +708,7 @@ mod tests {
         tokio::time::timeout(Duration::from_secs(1), async {
             loop {
                 let conn_state = task_exec!(&ts.proxy.task_egress, async move |state| {
-                    Ok(state.conn_state)
+                    state.conn_state
                 })
                 .await
                 .expect("task_exec failed");
@@ -745,7 +741,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         let conn_state = task_exec!(&ts.proxy.task_egress, async move |state| {
-            Ok(state.conn_state)
+            state.conn_state
         })
         .await
         .expect("task_exec failed");
@@ -759,7 +755,7 @@ mod tests {
         ts.wg.expect_recv(&[(pks[0], b"third")]).await;
 
         let conn_state = task_exec!(&ts.proxy.task_egress, async move |state| {
-            Ok(state.conn_state)
+            state.conn_state
         })
         .await
         .expect("task_exec failed");
@@ -784,7 +780,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         let conn_state = task_exec!(&ts.proxy.task_egress, async move |state| {
-            Ok(state.conn_state)
+            state.conn_state
         })
         .await
         .expect("task_exec failed");
@@ -1025,7 +1021,7 @@ mod tests {
                         let duration = Duration::from_secs(1);
                         thread::sleep(duration);
                         let conn_state = task_exec!(&self.proxy.task_egress, async move |state| {
-                            Ok(state.conn_state)
+                            state.conn_state
                         })
                         .await
                         .expect("task_exec failed");
