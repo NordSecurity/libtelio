@@ -11,6 +11,7 @@ from tests.config import (
     STUN_SERVER,
     LAN_ADDR_MAP,
     CORE_API_URL,
+    LIBTELIO_LOCAL_IP,
 )
 from tests.helpers import (
     print_network_state,
@@ -392,6 +393,162 @@ async def test_openwrt_ip_leaks(
                     if ip in line
                 ]
                 assert not errors, "Next IPs were leaked:\n" + "\n".join(errors)
+            logread_proc = await start_logread_process(
+                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
+            )
+        await wait_for_log_line(logread_proc)
+        log.info("Network has been reloaded")
+
+
+PROBE_TABLE = "natlab_source_guard_probe"
+KNOCK_PORT = 44444
+
+
+async def nft_counter_packets(connection: Connection, counter: str) -> int:
+    proc = await connection.create_process(
+        ["nft", "list", "counter", "inet", PROBE_TABLE, counter]
+    ).execute()
+    match = re.search(r"packets (\d+)", proc.get_stdout())
+    assert match, f"Unexpected nft output: {proc.get_stdout()}"
+    return int(match.group(1))
+
+
+@pytest.mark.asyncio
+@pytest.mark.openwrt
+@pytest.mark.parametrize("client_tag,gw_tag", OPENWRT_TAGS)
+async def test_openwrt_wan_replies_do_not_enter_tunnel(
+    client_tag: ConnectionTag,
+    gw_tag: ConnectionTag,
+) -> None:
+    """
+    Replies to unsolicited packets arriving on the WAN must not enter the tunnel
+
+    The exit routes send everything the router itself sends into the tunnel,
+    including the resets it answers to connection attempts on its WAN address.
+    Those belong to connections that came in on the WAN, so they are not
+    masqueraded and would enter the tunnel with the WAN address as source.
+
+    Steps:
+        1. Start NordVPN Lite in OpenWRT container
+        2. Add a probe nft table that counts knocks arriving on the WAN and
+           packets leaving through the tunnel with a source other than the
+           tunnel address. It hooks after the source guard of nordvpnlite, so
+           it only sees what the guard let through.
+        3. Knock on a closed TCP port of the WAN address from PHOTO ALBUM
+        4. Check the knocks arrived and nothing with a foreign source left
+           through the tunnel
+        5. Check the gateway and the client still reach PHOTO ALBUM through the vpn
+    """
+    async with AsyncExitStack() as exit_stack:
+        client_connection, gateway_connection, nordvpnlite = (
+            await setup_openwrt_test_environment(
+                ConfigPresetName.VPN_OPENWRT_UCI_PL,
+                exit_stack,
+                client_tag=client_tag,
+                gw_tag=gw_tag,
+            )
+        )
+        photo_album_connection = await exit_stack.enter_async_context(
+            new_connection_raw(ConnectionTag.DOCKER_PHOTO_ALBUM)
+        )
+        tunnel_interface = CONFIG_PRESETS[
+            ConfigPresetName.VPN_OPENWRT_UCI_PL
+        ].interface.name
+        wan_ip = OPENWRT_GW_WAN_IP[gw_tag]
+
+        async def nft(*args: str) -> None:
+            await gateway_connection.create_process(["nft", *args]).execute()
+
+        async def remove_probe_table() -> None:
+            try:
+                await nft("delete", "table", "inet", PROBE_TABLE)
+            except ProcessExecError as e:
+                log.debug("Failed to delete %s: %s", PROBE_TABLE, e)
+
+        async with nordvpnlite.start():
+            log.debug("NordVPN Lite started, waiting for connected vpn state...")
+            await nordvpnlite.wait_for_vpn_connected_state()
+
+            await remove_probe_table()
+            exit_stack.push_async_callback(remove_probe_table)
+            await nft("add", "table", "inet", PROBE_TABLE)
+            await nft("add", "counter", "inet", PROBE_TABLE, "knocks")
+            await nft("add", "counter", "inet", PROBE_TABLE, "leaked")
+            await nft(
+                "add",
+                "chain",
+                "inet",
+                PROBE_TABLE,
+                "prerouting",
+                "{ type filter hook prerouting priority raw; policy accept; }",
+            )
+            await nft(
+                "add",
+                "rule",
+                "inet",
+                PROBE_TABLE,
+                "prerouting",
+                "ip",
+                "saddr",
+                PHOTO_ALBUM_IP,
+                "ip",
+                "daddr",
+                wan_ip,
+                "tcp",
+                "dport",
+                str(KNOCK_PORT),
+                "counter",
+                "name",
+                "knocks",
+            )
+            # nordvpnlite's source guard runs at srcnat + 10, the probe after it
+            await nft(
+                "add",
+                "chain",
+                "inet",
+                PROBE_TABLE,
+                "postrouting",
+                "{ type filter hook postrouting priority srcnat + 20; policy accept; }",
+            )
+            await nft(
+                "add",
+                "rule",
+                "inet",
+                PROBE_TABLE,
+                "postrouting",
+                "oifname",
+                f'"{tunnel_interface}"',
+                "ip",
+                "saddr",
+                "!=",
+                LIBTELIO_LOCAL_IP,
+                "counter",
+                "name",
+                "leaked",
+            )
+
+            for _ in range(5):
+                try:
+                    await photo_album_connection.create_process(
+                        ["nc", "-z", "-w", "1", wan_ip, str(KNOCK_PORT)]
+                    ).execute()
+                except ProcessExecError:
+                    # Expected, the port is closed or the reply never comes back
+                    pass
+
+            knocks = await nft_counter_packets(gateway_connection, "knocks")
+            leaked = await nft_counter_packets(gateway_connection, "leaked")
+            log.info("knocks: %s, leaked into tunnel: %s", knocks, leaked)
+            assert knocks > 0, "Knocks from PHOTO ALBUM never reached the WAN"
+            assert leaked == 0, (
+                f"{leaked} packets left through {tunnel_interface} with a source"
+                f" other than {LIBTELIO_LOCAL_IP}"
+            )
+
+            # The guard must not affect forwarded or the router's own vpn traffic
+            await check_gateway_and_client_ip(
+                gateway_connection, client_connection, WG_SERVER["ipv4"], gw_tag
+            )
             logread_proc = await start_logread_process(
                 gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
             )
