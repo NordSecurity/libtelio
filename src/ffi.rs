@@ -135,9 +135,11 @@ pub fn generate_public_key(secret_key: SecretKey) -> PublicKey {
 
 /// Parse a comma-separated list of cipher names into a [`Vec`] of known [`Cipher`] values.
 ///
-/// Tokens that do not match a known cipher name are ignored,
+/// Unknown cipher names are ignored. Duplicate cipher names are
+/// silently deduplicated. Parser is case-sensitive.
+/// Cipher names shall follow IANA registry AEAD ciphers naming convention.
 ///
-/// Example: `parse_ciphers("chacha20poly1305, aegis256, unknown").to_string()` →
+/// Example: `parse_ciphers("AEAD_CHACHA20_POLY1305, AEAD_AEGIS256, unknown").to_string()` →
 /// `[Cipher::Chacha20Poly1305, Cipher::Aegis256]`
 pub fn parse_ciphers(ciphers: String) -> Vec<cipher::Cipher> {
     cipher::parse_ciphers(ciphers)

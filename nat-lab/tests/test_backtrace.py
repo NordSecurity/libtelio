@@ -47,7 +47,7 @@ STACK_PANIC = ErrorSource(
     calls_innermost_first=[
         ExpectedFrame("TelioError"),
         ExpectedFrame("catch_ffi_panic", 109, {TargetOS.Windows: 112}),
-        ExpectedFrame("generate_stack_panic", 1116),
+        ExpectedFrame("generate_stack_panic", 1118),
     ],
     file_name="ffi.rs",
 )
@@ -58,12 +58,12 @@ GENERATED_ERROR = ErrorSource(
     allowed_errors=[],
     calls_innermost_first=[
         ExpectedFrame("TelioError"),
-        ExpectedFrame("quux", 1173),
-        ExpectedFrame("baz", 1169),
-        ExpectedFrame("bar", 1165),
-        ExpectedFrame("foo", 1161),
+        ExpectedFrame("quux", 1175),
+        ExpectedFrame("baz", 1171),
+        ExpectedFrame("bar", 1167),
+        ExpectedFrame("foo", 1163),
         ExpectedFrame("catch_ffi_panic", 95, {TargetOS.Windows: 102}),
-        ExpectedFrame("generate_error", 1155, {TargetOS.Windows: 1148}),
+        ExpectedFrame("generate_error", 1157, {TargetOS.Windows: 1150}),
     ],
     file_name="ffi.rs",
 )
