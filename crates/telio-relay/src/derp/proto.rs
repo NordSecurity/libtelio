@@ -316,7 +316,7 @@ async fn write_client_key<W: AsyncWrite + Unpin>(
 ) -> Result<(), Error> {
     let public_key = secret_key.public();
 
-    telio_log_trace!("DERP starting with {}", public_key);
+    telio_log_trace!("DERP starting with {:?}", public_key);
 
     #[cfg(not(test))]
     let mut rng = rand_core_compat::TryRng09(rand_core_compat::rand_core_0_9::OsRng);

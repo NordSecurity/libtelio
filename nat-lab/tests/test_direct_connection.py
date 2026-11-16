@@ -491,7 +491,7 @@ async def test_direct_working_paths_with_skip_unresponsive_peers() -> None:
             *[
                 running_client.log.wait_for(
                     "Skipping sending CMM to peer"
-                    f" {stopped_node.public_key} (Unresponsive)"
+                    f' "{stopped_node.public_key[:4]}...{stopped_node.public_key[-4:]}" (Unresponsive)'
                 )
                 for running_client, stopped_node in itertools.product(
                     [alpha_client, beta_client, gamma_client], [delta, epsilon]

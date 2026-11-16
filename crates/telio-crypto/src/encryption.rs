@@ -15,7 +15,7 @@ pub enum Error {
     #[error(transparent)]
     EncryptionFailed(#[from] aead::Error),
     /// Received request contained unknown key
-    #[error("Request contains forbidden key: {0}")]
+    #[error("Request contains forbidden key: {0:?}")]
     ForbiddenKey(PublicKey),
     /// Not enough data in buffer when decrypting
     #[error("Invalid length when decrypting")]

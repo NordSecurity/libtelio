@@ -76,7 +76,7 @@ impl LinkDetection {
     /// - `public_key`: The public key identifying the peer
     /// - `stats`: Shared peer's traffic counters
     pub fn insert(&mut self, public_key: &PublicKey, stats: Arc<Mutex<BytesAndTimestamps>>) {
-        telio_log_debug!("insert {}", public_key);
+        telio_log_debug!("insert {:?}", public_key);
         self.peers
             .insert(*public_key, State::new(stats, self.cfg_max_allowed_rtt));
     }
@@ -106,7 +106,7 @@ impl LinkDetection {
                     },
                     |mut stats| {
                         telio_log_debug!(
-                            "Overriding first_tx_after_rx due to network change for: {}",
+                            "Overriding first_tx_after_rx due to network change for: {:?}",
                             public_key
                         );
                         stats.first_tx_after_rx = Some(Instant::now());
@@ -168,7 +168,7 @@ impl LinkDetection {
 
     /// Removes a peer.
     pub fn remove(&mut self, public_key: &PublicKey) {
-        telio_log_debug!("remove {}", public_key);
+        telio_log_debug!("remove {:?}", public_key);
         self.peers.remove(public_key);
     }
 

@@ -96,7 +96,7 @@ impl SessionKeeperTrait for SessionKeeper {
     ) -> Result<()> {
         let dual_target = DualTarget::new(target).map_err(ErrorVariant::DualTargetError)?;
 
-        telio_log_debug!("Add peer: {} with interval: {:?}", public_key, interval);
+        telio_log_debug!("Add peer: {:?} with interval: {:?}", public_key, interval);
 
         task_exec!(&self.task, async move |s| {
             if s.actions.contains_action(&public_key) {
@@ -124,7 +124,7 @@ impl SessionKeeperTrait for SessionKeeper {
         .map_err(ErrorVariant::Task)?
         .map_err(ErrorVariant::RepeatedActionError)?;
 
-        telio_log_debug!("Added {}", public_key);
+        telio_log_debug!("Added {:?}", public_key);
         Ok(())
     }
 
@@ -169,7 +169,7 @@ impl Runtime for State {
                 action(self)
                     .await
                     .map_or_else(|e| {
-                        telio_log_warn!("({}) Error sending keepalive to {} node: {}", Self::NAME, pk, e.to_string());
+                        telio_log_warn!("({}) Error sending keepalive to {:?} node: {}", Self::NAME, pk, e.to_string());
                         Ok::<(), ()>(())
                     }, |_| Ok(()))?;
             }

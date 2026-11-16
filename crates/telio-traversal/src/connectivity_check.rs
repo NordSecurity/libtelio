@@ -28,7 +28,7 @@ pub enum ErrorVariant {
     ),
     #[error("Task Execution error")]
     TaskExecError(#[from] telio_task::ExecError),
-    #[error("Unexpected peer {0}")]
+    #[error("Unexpected peer {0:?}")]
     UnexpectedPeer(PublicKey),
     #[error("Codec error: {0}")]
     CodecError(#[from] telio_proto::CodecError),

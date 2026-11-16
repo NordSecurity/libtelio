@@ -499,7 +499,7 @@ impl Runtime for StateIngress {
                 }
             }
             Some((pk, sock)) = self.updated_socket.recv() => {
-                telio_log_debug!("Updating socket mapping for {pk} to {sock:?}");
+                telio_log_debug!("Updating socket mapping for {pk:?} to {sock:?}");
 
                 let _ = self.sockets.insert(pk, sock);
             }

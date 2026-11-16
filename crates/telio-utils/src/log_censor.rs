@@ -12,6 +12,7 @@ pub struct LogCensor {
     mask_seed: [u8; 32],
     regex: Regex,
     hide_data_regex: Regex,
+    public_key_regex: Regex,
     is_enabled: AtomicBool,
 }
 
@@ -35,6 +36,13 @@ impl Default for LogCensor {
         #[allow(clippy::expect_used)]
         let hide_data_regex = Regex::new(r#"(\\?['"])?hide_(user_data|thread_id)(\\?['"])?(\s)*:(\s)*(true|false)(\s)*,(\s)*"#)
             .expect("Statically known String for filtering hide_user_data and hide_thread_id is a valid regex");
+
+        // Base64 encoded 32 byte key: 43 chars + '=' padding, last char only carries 4 bits.
+        // regex_lite has no lookbehind, so the preceding char (if any) is captured instead.
+        #[allow(clippy::expect_used)]
+        let public_key_regex =
+            Regex::new(r"(^|[^A-Za-z0-9+/])([A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=)")
+                .expect("Statically known String for filtering public keys is a valid regex");
 
         #[allow(clippy::expect_used)]
         RegexBuilder::new(
@@ -94,6 +102,7 @@ impl Default for LogCensor {
             regex: re,
             is_enabled: AtomicBool::new(true),
             hide_data_regex,
+            public_key_regex,
             mode: LogCensorMode::default(),
         })
         .expect("Statically known string for LogCensor is a valid regex")
@@ -228,12 +237,53 @@ impl LogCensor {
         }
     }
 
-    /// Replace IPs and domains in `log` according to the selected mode of operation.
+    /// Shorten full base64 keys to the same `AbCd...WxY=` form as `PublicKey`'s `Debug`.
+    fn shorten_keys(&self, log: String) -> String {
+        let replaced = self
+            .public_key_regex
+            .replace_all(&log, |captures: &Captures| {
+                let (Some(prefix), Some(key)) = (captures.get(1), captures.get(2)) else {
+                    return captures
+                        .get(0)
+                        .map(|m| m.as_str())
+                        .unwrap_or_default()
+                        .to_owned();
+                };
+                // Part of a longer base64 string, not a key
+                if log
+                    .get(key.end()..)
+                    .is_some_and(|rest| rest.starts_with('='))
+                {
+                    return captures
+                        .get(0)
+                        .map(|m| m.as_str())
+                        .unwrap_or_default()
+                        .to_owned();
+                }
+                let key = key.as_str();
+                format!(
+                    "{}{}...{}",
+                    prefix.as_str(),
+                    key.get(..4).unwrap_or_default(),
+                    key.get(key.len() - 4..).unwrap_or_default()
+                )
+            });
+
+        match replaced {
+            std::borrow::Cow::Borrowed(_) => log,
+            std::borrow::Cow::Owned(replaced) => replaced,
+        }
+    }
+
+    /// Shorten keys unconditionally, then replace IPs and domains in `log`
+    /// according to the selected mode of operation.
     pub fn censor_logs(&self, log: String) -> String {
         let log = match self.hide_data_regex.replace_all(&log, |_: &Captures| "") {
             std::borrow::Cow::Borrowed(_) => log,
             std::borrow::Cow::Owned(replaced) => replaced,
         };
+
+        let log = self.shorten_keys(log);
 
         if !self.should_censor() {
             return log;
@@ -559,6 +609,58 @@ mod test {
 
         for (original_log, expected_censored_log) in examples() {
             assert_eq!(expected_censored_log, censor.censor_logs(original_log));
+        }
+    }
+
+    #[test]
+    fn test_public_key_shortening() {
+        let censor = test_censor();
+        let cases = [
+            (
+                "Peer JkgUJU4d25dRV/URMXlnOlcVF2Qbk3FuVpu4O0Lt9E4= was downgraded",
+                "Peer JkgU...9E4= was downgraded",
+            ),
+            (
+                "keys: CKqBTkJgdJa7Si1oxj0UpFxfb7OZkBjMNxVU6xtjdWA=,JkgUJU4d25dRV/URMXlnOlcVF2Qbk3FuVpu4O0Lt9E4=",
+                "keys: CKqB...dWA=,JkgU...9E4=",
+            ),
+            (
+                "JkgUJU4d25dRV/URMXlnOlcVF2Qbk3FuVpu4O0Lt9E4=",
+                "JkgU...9E4=",
+            ),
+            // Already short (Debug) form is left alone
+            (r#"peer "JkgU...9E4=" proxying"#, r#"peer "JkgU...9E4=" proxying"#),
+            // Longer base64 strings are not keys
+            (
+                "blob xJkgUJU4d25dRV/URMXlnOlcVF2Qbk3FuVpu4O0Lt9E4= end",
+                "blob xJkgUJU4d25dRV/URMXlnOlcVF2Qbk3FuVpu4O0Lt9E4= end",
+            ),
+            (
+                "blob JkgUJU4d25dRV/URMXlnOlcVF2Qbk3FuVpu4O0Lt9E4== end",
+                "blob JkgUJU4d25dRV/URMXlnOlcVF2Qbk3FuVpu4O0Lt9E4== end",
+            ),
+            // key=value notations
+            (
+                "public_key=JkgUJU4d25dRV/URMXlnOlcVF2Qbk3FuVpu4O0Lt9E4=",
+                "public_key=JkgU...9E4=",
+            ),
+            (
+                "pubkey=iNf4cozueiSCSAUU2WrES4CctjfFFKefGNST0wRD9kM=",
+                "pubkey=iNf4...9kM=",
+            ),
+            (
+                "GET /v1/peers?pk=CKqBTkJgdJa7Si1oxj0UpFxfb7OZkBjMNxVU6xtjdWA=&x=1",
+                "GET /v1/peers?pk=CKqB...dWA=&x=1",
+            )
+        ];
+        for (input, expected) in cases {
+            assert_eq!(expected, censor.censor_logs(input.to_owned()), "{input}");
+        }
+
+        // Keys must be shortened even when censoring of user data is disabled
+        censor.set_enabled(false);
+        for (input, expected) in cases {
+            assert_eq!(expected, censor.censor_logs(input.to_owned()), "{input}");
         }
     }
 
