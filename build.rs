@@ -122,8 +122,14 @@ fn main() -> Result<()> {
 
     #[cfg(windows)]
     if target_os == "windows" {
+        // Patched by ci/insert_libtelio_version.py, must match telio_utils::git::version_tag
+        const VERSION_PLACEHOLDER: &str = "VERSION_PLACEHOLDER@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@";
         winres::WindowsResource::new()
             .set("LegalCopyright", "Nord Security")
+            .set("FileVersion", VERSION_PLACEHOLDER)
+            .set("ProductVersion", VERSION_PLACEHOLDER)
+            .set_version_info(winres::VersionInfo::FILEVERSION, 0)
+            .set_version_info(winres::VersionInfo::PRODUCTVERSION, 0)
             .compile()?;
     }
 

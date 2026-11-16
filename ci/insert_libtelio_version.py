@@ -3,17 +3,46 @@
 import argparse
 import os
 import replace_string
+import shutil
 import sys
+from binary_version import (
+    VERSION_PLACEHOLDER,
+    patch_macho_dylib_version,
+    patch_pe_version_info,
+)
 from build_libtelio import LIBTELIO_CONFIG
 
-VERSION_PLACEHOLDER = "VERSION_PLACEHOLDER@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+
+def patch_binary(path: str, new_version: str):
+    replace_string.replace_string_in_file(path, VERSION_PLACEHOLDER, new_version)
+    if path.endswith(".dll"):
+        patch_pe_version_info(path, new_version)
+    elif path.endswith(".dylib"):
+        patch_macho_dylib_version(path, new_version)
+
+
+def insert_version(binaries: list, new_version: str):
+    staged = {}
+    try:
+        for binary in binaries:
+            root, ext = os.path.splitext(binary)
+            staged[binary] = f"{root}.patching{ext}"
+            shutil.copy2(binary, staged[binary])
+            patch_binary(staged[binary], new_version)
+    except Exception:
+        for temp in staged.values():
+            if os.path.exists(temp):
+                os.remove(temp)
+        raise
+    for binary, temp in staged.items():
+        os.replace(temp, binary)
 
 
 def insert_version_to_libtelio_binaries_in_dir(new_version: str, path: str):
     if not os.path.exists(path):
         raise ValueError("Directory does not exist")
 
-    is_valid_package = False
+    binaries = []
     for target_os, os_config in LIBTELIO_CONFIG.items():
         packages = [
             list(package.values())[0]
@@ -25,10 +54,7 @@ def insert_version_to_libtelio_binaries_in_dir(new_version: str, path: str):
                 package for package in packages if package in path
             ):
                 print(f"{target_os}:{path}")
-                is_valid_package = True
-                replace_string.replace_string_in_file(
-                    path, VERSION_PLACEHOLDER, new_version
-                )
+                binaries.append(path)
         else:
             for dirname, subdirnames, filenames in os.walk(path):
                 if "dSYM" in dirname:
@@ -39,12 +65,10 @@ def insert_version_to_libtelio_binaries_in_dir(new_version: str, path: str):
                     if target_os in full_path and filename in packages:
                         binary = os.path.join(dirname, filename)
                         print(f"{target_os}:{binary}")
-                        is_valid_package = True
-                        replace_string.replace_string_in_file(
-                            binary, VERSION_PLACEHOLDER, new_version
-                        )
-    if not is_valid_package:
+                        binaries.append(binary)
+    if not binaries:
         raise ValueError(f"Path {path} doesn't contain any libtelio packages")
+    insert_version(list(dict.fromkeys(binaries)), new_version)
 
 
 def main(args):

@@ -56,6 +56,8 @@ jobs:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - name: Test replacement script
         run: python3 ci/test_replace_string.py
+      - name: Test binary version patching
+        run: python3 ci/test_binary_version.py
 
   test-nordvpnlite:
     runs-on: ubuntu-22.04
@@ -125,15 +127,21 @@ jobs:
               echo "Unknown or unsupported target OS"
               exit 1
           fi
-          python3 ci/insert_libtelio_version.py -n TEST_VERSION -p ./${DIST_PATH}
+          python3 ci/insert_libtelio_version.py -n v99.1.2-test -p ./${DIST_PATH}
           ./${DIST_PATH}/release/${{ matrix.arch }}/tcli
-          grep -aF "Created libtelio instance TEST_VERSION, " tcli.log
+          grep -aF "Created libtelio instance v99.1.2-test, " tcli.log
+          if [[ ${{ matrix.target_os }} == "macos" ]]; then
+              otool -l ./${DIST_PATH}/release/${{ matrix.arch }}/libtelio.dylib | grep -A4 LC_ID_DYLIB | grep "current version 99.1.2"
+          fi
       - name: Replace and Test version
         if: ${{ matrix.target_os == 'windows' }}
         run: |
-          python ./ci/insert_libtelio_version.py -n TEST_VERSION -p ./dist/windows
+          python ./ci/insert_libtelio_version.py -n v99.1.2-test -p ./dist/windows
           Start-Process -FilePath dist/windows/release/x86_64/tcli.exe -WindowStyle Hidden
-          type tcli.log | findstr /C:"Created libtelio instance TEST_VERSION, "
+          type tcli.log | findstr /C:"Created libtelio instance v99.1.2-test, "
+          $info = (Get-Item dist/windows/release/x86_64/telio.dll).VersionInfo
+          $info | Format-List FileVersion, ProductVersion, FileMajorPart, FileMinorPart, FileBuildPart
+          if ($info.FileVersion -ne "v99.1.2-test" -or $info.ProductVersion -ne "v99.1.2-test" -or $info.FileMajorPart -ne 99 -or $info.FileMinorPart -ne 1 -or $info.FileBuildPart -ne 2) { exit 1 }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: libtelio-build-${{ matrix.target_os }}-${{ matrix.arch }}-with-replaced-version
