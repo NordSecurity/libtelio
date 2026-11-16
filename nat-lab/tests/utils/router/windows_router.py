@@ -1,8 +1,8 @@
 import random
 from .router import Router, IPProto, IPStack
 from contextlib import asynccontextmanager
+from natlab import CommandGrepper
 from tests.config import LIBTELIO_IPV6_WG_SUBNET
-from tests.utils.command_grepper import CommandGrepper
 from tests.utils.connection import Connection
 from tests.utils.logger import log
 from tests.utils.process import ProcessExecError

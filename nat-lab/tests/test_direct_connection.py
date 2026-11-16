@@ -5,6 +5,8 @@ import pytest
 import re
 from collections import defaultdict
 from contextlib import AsyncExitStack, asynccontextmanager
+from natlab import ping
+from natlab.asyncio_util import run_async_context
 from tests import config, timeouts
 from tests.config import DERP_SERVERS
 from tests.helpers import (
@@ -14,7 +16,6 @@ from tests.helpers import (
     SetupParameters,
 )
 from tests.mesh_api import Node
-from tests.utils.asyncio_util import run_async_context
 from tests.utils.bindings import (
     Features,
     default_features,
@@ -29,7 +30,6 @@ from tests.utils.bindings import (
 )
 from tests.utils.connection import Connection, ConnectionTag
 from tests.utils.logger import log
-from tests.utils.ping import ping
 from tests.utils.telio_log_notifier import TelioLogNotifier
 from typing import Any, Dict, List, Tuple
 

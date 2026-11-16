@@ -4,10 +4,10 @@ from asyncio import Event
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import Enum, auto
+from natlab import OutputNotifier
 from tests.config import ANDROID_DEVICE_TMP, IPERF_BINARY_MAC, IPERF_BINARY_WINDOWS
 from tests.utils.connection import Connection, TargetOS
 from tests.utils.logger import log
-from tests.utils.output_notifier import OutputNotifier
 from tests.utils.process import Process
 from tests.utils.process.process import ProcessExecError
 from typing import AsyncIterator, Any, Dict

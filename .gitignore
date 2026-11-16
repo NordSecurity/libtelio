@@ -49,3 +49,8 @@ report.json
 /contrib/http_root/cgi-bin/builder
 *_pb2*.py
 /nat-lab/bin/*.ipk
+
+# placed by natlab from the build artifacts
+/nat-lab/tests/uniffi/libtelio.so
+/nat-lab/tests/uniffi/libtelio.so.debug
+/nat-lab/compiled_test_durations.json

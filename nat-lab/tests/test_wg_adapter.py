@@ -3,6 +3,7 @@ import hashlib
 import pytest
 import uuid
 from contextlib import AsyncExitStack
+from natlab.asyncio_util import run_async_context
 from Pyro5.errors import CommunicationError  # type:ignore
 from tests.config import WINDOWS_NETWORK_ADAPTER_REGISTRY_KEY, UNIFFI_PATH_WINDOWS_VM
 from tests.helpers import (
@@ -15,7 +16,6 @@ from tests.libtelio_client.client import Client
 from tests.log_collector import save_logs
 from tests.mesh_api import Node
 from tests.timeouts import TEST_WG_ADAPTER_CLEANUP_TIMEOUT
-from tests.utils.asyncio_util import run_async_context
 from tests.utils.bindings import default_features, Features, TelioAdapterType
 from tests.utils.connection import Connection, ConnectionTag
 from tests.utils.connection_util import new_connection_by_tag
