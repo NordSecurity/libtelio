@@ -2771,14 +2771,23 @@ impl TaskRuntime for Runtime {
                             if let Some(direct_entities) = mesh_entities.direct.as_ref() {
                                 // We have downgraded the connection. Notify cross ping check about that.
                                 direct_entities.cross_ping_check.notify_failed_wg_connection(public_key)
-                                    .await?;
+                                    .await
+                                    .unwrap_or_else(
+                                        |e| {
+                                            telio_log_warn!("Failed to notify cross ping check about downgraded peer {public_key}: {e:?}. Ignoring");
+                                        });
                                 direct_entities.upgrade_sync.clear_accepted_session(public_key).await;
                             } else {
                                 telio_log_warn!("Connection downgraded while direct entities are disabled");
                             }
 
                             // Unmute pair to allow communication through proxy
-                            mesh_entities.proxy.mute_peer(public_key, None).await?;
+                            mesh_entities.proxy.mute_peer(public_key, None)
+                                .await
+                                .unwrap_or_else(
+                                    |e| {
+                                        telio_log_warn!("Failed to unmute downgraded peer {public_key}: {e:?}. Ignoring");
+                                    });
 
                             telio_log_info!("Peer {} was downgraded", public_key);
                         }
