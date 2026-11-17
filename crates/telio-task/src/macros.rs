@@ -33,22 +33,41 @@ where
 /// ```
 #[macro_export]
 macro_rules! task_exec {
-    ($task:expr, async move |$s:ident| $body:expr) => {
-        $crate::Task::exec($task, move |$s| $crate::boxed(async move { $body }))
+    ($task:expr, $($closure:tt)+) => {
+        $crate::__task_exec!(exec, $task, $($closure)+)
+    };
+}
+
+/// Same as [task_exec], but the closure returns [ExecOutcome](crate::ExecOutcome).
+///
+/// [ExecOutcome::StopTask](crate::ExecOutcome::StopTask) stops the task with the given error
+/// and the caller gets [ExecError](crate::ExecError).
+#[macro_export]
+macro_rules! task_exec_or_stop {
+    ($task:expr, $($closure:tt)+) => {
+        $crate::__task_exec!(exec_or_stop, $task, $($closure)+)
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __task_exec {
+    ($method:ident, $task:expr, async move |$s:ident| $body:expr) => {
+        $crate::Task::$method($task, move |$s| $crate::boxed(async move { $body }))
     };
 
-    ($task:expr, async move |$s:ident: $stype:ty| { $body:expr }) => {
-        $crate::Task::exec($task, move |$s: $stype| $crate::boxed(async move { $body }))
+    ($method:ident, $task:expr, async move |$s:ident: $stype:ty| { $body:expr }) => {
+        $crate::Task::$method($task, move |$s: $stype| $crate::boxed(async move { $body }))
     };
 
-    ($task:expr, async move |$s:ident| -> $rtype:ty $body:block ) => {
-        $crate::Task::exec($task, move |$s| -> BoxFuture<'_, $rtype> {
+    ($method:ident, $task:expr, async move |$s:ident| -> $rtype:ty $body:block ) => {
+        $crate::Task::$method($task, move |$s| -> BoxFuture<'_, $rtype> {
             $crate::boxed(async move { $body })
         })
     };
 
-    ($task:expr, async move |$s:ident: $stype:ty| -> $rtype:ty $body:block ) => {
-        $crate::Task::exec($task, move |$s: $stype| -> BoxFuture<'_, $rtype> {
+    ($method:ident, $task:expr, async move |$s:ident: $stype:ty| -> $rtype:ty $body:block ) => {
+        $crate::Task::$method($task, move |$s: $stype| -> BoxFuture<'_, $rtype> {
             $crate::boxed(async move { $body })
         })
     };

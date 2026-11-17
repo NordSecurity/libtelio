@@ -91,7 +91,7 @@ impl<T> RuntimeExt for T where T: Runtime {}
 ///   * Ability to execute mutation on state without requiring mutex'es
 pub struct Task<S: Runtime> {
     stop: Arc<Notify>,
-    execute: Tx<Update<S>>,
+    execute: Tx<Update<S, S::Err>>,
     join: Option<JoinHandle<Result<(), S::Err>>>,
 }
 
@@ -99,6 +99,15 @@ pub struct Task<S: Runtime> {
 #[derive(Debug, thiserror::Error)]
 #[error("Failed to execute.")]
 pub struct ExecError;
+
+/// Value returned by an action passed to [Task::exec_or_stop]
+#[derive(Debug, PartialEq, Eq)]
+pub enum ExecOutcome<V, E> {
+    /// Hand the value back to the caller, the task keeps running
+    Return(V),
+    /// Stop the task with the error, the caller gets [ExecError]
+    StopTask(E),
+}
 
 /// Task stop status.
 #[derive(Debug)]
@@ -138,7 +147,7 @@ type AnySend = Box<dyn Any + Send + 'static>;
 
 type Resp<T> = oneshot::Sender<T>;
 
-type Update<S> = (BoxAction<S, AnySend>, Resp<AnySend>);
+type Update<S, E> = (BoxAction<S, ExecOutcome<AnySend, E>>, Resp<AnySend>);
 
 impl<S> Task<S>
 where
@@ -150,7 +159,7 @@ where
         let Chan {
             tx: execute,
             rx: execute_rx,
-        } = Chan::<Update<S>>::default();
+        } = Chan::<Update<S, S::Err>>::default();
 
         let stopped = stop.clone();
         let join = Some(tokio::spawn(async move {
@@ -179,26 +188,39 @@ where
     }
 
     /// Execute action with exclusive access on state
-    #[allow(mpsc_blocking_send)]
     pub async fn exec<A, V>(&self, action: A) -> Result<V, ExecError>
     where
         for<'a> A: FnOnce(&'a mut S) -> BoxFuture<'a, V> + Send + 'static,
         V: Send + 'static,
     {
+        self.exec_or_stop(|s: &mut S| action(s).map(ExecOutcome::Return).boxed())
+            .await
+    }
+
+    /// Execute action with exclusive access on state, the action can stop the task
+    #[allow(mpsc_blocking_send)]
+    pub async fn exec_or_stop<A, V>(&self, action: A) -> Result<V, ExecError>
+    where
+        for<'a> A: FnOnce(&'a mut S) -> BoxFuture<'a, ExecOutcome<V, S::Err>> + Send + 'static,
+        V: Send + 'static,
+    {
         let (tx, rx) = oneshot::channel();
-        let act: BoxAction<S, AnySend> =
-            Box::new(|s: &mut S| action(s).map(|v| Box::new(v) as AnySend).boxed());
+        let act: BoxAction<S, ExecOutcome<AnySend, S::Err>> = Box::new(|s: &mut S| {
+            action(s)
+                .map(|outcome| match outcome {
+                    ExecOutcome::Return(v) => ExecOutcome::Return(Box::new(v) as AnySend),
+                    ExecOutcome::StopTask(e) => ExecOutcome::StopTask(e),
+                })
+                .boxed()
+        });
 
         if self.execute.send((act, tx)).await.is_err() {
-            Err(ExecError)
-        } else if let Ok(res) = rx.await {
-            match res.downcast::<V>() {
-                Ok(r) => Ok(*r),
-                Err(_) => Err(ExecError),
-            }
-        } else {
-            Err(ExecError)
+            return Err(ExecError);
         }
+        let Ok(res) = rx.await else {
+            return Err(ExecError);
+        };
+        res.downcast::<V>().map(|r| *r).map_err(|_| ExecError)
     }
 
     /// Stop task
@@ -218,18 +240,22 @@ where
         }
     }
 
-    async fn run_loop(state: &mut S, mut execed: Rx<Update<S>>) -> Result<(), S::Err> {
+    async fn run_loop(state: &mut S, mut execed: Rx<Update<S, S::Err>>) -> Result<(), S::Err> {
         loop {
             state
                 .wait_with_update(execed.recv().map(|e| -> BoxAction<S, Result<(), S::Err>> {
                     Box::new(move |s: &mut S| {
                         async move {
-                            if let Some((action, resp)) = e {
-                                let _ = resp.send(action(s).await);
-                                Ok(())
-                            } else {
+                            let Some((action, resp)) = e else {
                                 telio_log_warn!("Task's {} exec handle dropped.", S::NAME);
-                                pending().await
+                                return pending().await;
+                            };
+                            match action(s).await {
+                                ExecOutcome::Return(value) => {
+                                    let _ = resp.send(value);
+                                    Ok(())
+                                }
+                                ExecOutcome::StopTask(e) => Err(e),
                             }
                         }
                         .boxed()
@@ -294,7 +320,7 @@ mod tests {
 
     use std::time::Duration;
 
-    use crate::task_exec;
+    use crate::{task_exec, task_exec_or_stop};
 
     use super::*;
     use async_trait::async_trait;
@@ -354,6 +380,13 @@ mod tests {
 
         async fn test_fail(&self) -> Result<Result<(), ()>, ExecError> {
             task_exec!(&self.task, async move |_s| -> Result<(), ()> { Err(()) }).await
+        }
+
+        async fn test_exec_or_stop(
+            &self,
+            outcome: ExecOutcome<&'static str, ()>,
+        ) -> Result<&'static str, ExecError> {
+            task_exec_or_stop!(&self.task, async move |_s| outcome).await
         }
 
         async fn test_panic(&self) {
@@ -488,6 +521,45 @@ mod tests {
 
         assert_eq!(Ok(()), test.stop().await.resume_unwind());
         assert_eq!(Ok("stopped"), stopped.await);
+    }
+
+    #[tokio::test]
+    async fn test_task_survives_return_in_exec_or_stop() {
+        let (lc, mut rc) = Chan::pipe();
+        let (stop, stopped) = oneshot::channel();
+        let test = Test::new(Io { msg: lc, stop });
+        test.test_configure(Some(())).await;
+
+        assert!(matches!(
+            test.test_exec_or_stop(ExecOutcome::Return("value")).await,
+            Ok("value")
+        ));
+
+        test.test_do("ok").await;
+        assert_eq!("ok", rc.rx.recv().await.unwrap());
+
+        assert_eq!(Ok(()), test.stop().await.resume_unwind());
+        assert_eq!(Ok("stopped"), stopped.await);
+    }
+
+    #[tokio::test]
+    async fn test_task_stopped_by_exec_or_stop() {
+        let (lc, rc) = Chan::pipe();
+        let (stop, stopped) = oneshot::channel();
+        let test = Test::new(Io { msg: lc, stop });
+        test.test_configure(Some(())).await;
+
+        assert!(matches!(
+            test.test_exec_or_stop(ExecOutcome::StopTask(())).await,
+            Err(ExecError)
+        ));
+
+        assert_eq!(Ok("stopped"), stopped.await);
+
+        assert!(rc.tx.send("end").await.is_err());
+        assert!(test.test_get().await.is_none());
+
+        assert_eq!(Err(()), test.stop().await.resume_unwind());
     }
 
     #[tokio::test]
