@@ -1,0 +1,1 @@
+Fix libtelio being stopped by a failed exit node connection, the error of the failed connection is returned instead

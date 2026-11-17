@@ -327,7 +327,7 @@ impl DerpRelay {
         let _ = task_exec!(&self.task, async move |s| {
             if s.config == config {
                 // Nothing todo here
-                return Ok(());
+                return;
             }
 
             s.config = config;
@@ -351,15 +351,13 @@ impl DerpRelay {
                     }
                 }
             }
-
-            Ok(())
         })
         .await;
     }
 
     /// Get current Derp configuration
     pub async fn get_config(&self) -> Option<Config> {
-        task_exec!(&self.task, async move |s| Ok(s.config.as_ref().cloned()))
+        task_exec!(&self.task, async move |s| s.config.as_ref().cloned())
             .await
             .ok()
             .flatten()
@@ -367,7 +365,7 @@ impl DerpRelay {
 
     /// Get current connection state (connected/disconnected)
     pub async fn get_conn_state(&self) -> bool {
-        task_exec!(&self.task, async move |s| Ok(s.conn.is_some()))
+        task_exec!(&self.task, async move |s| s.conn.is_some())
             .await
             .ok()
             .unwrap_or(false)
@@ -376,7 +374,7 @@ impl DerpRelay {
     /// Get server we are currently connected to.
     /// Returns None if we are not connected
     pub async fn get_connected_server(&self) -> Option<Server> {
-        task_exec!(&self.task, async move |s| Ok(s.server.clone()))
+        task_exec!(&self.task, async move |s| s.server.clone())
             .await
             .ok()
             .unwrap_or(None)
@@ -384,7 +382,7 @@ impl DerpRelay {
 
     /// Get newest information about remote peer states
     pub async fn get_remote_peer_states(&self) -> PeersStatesMap {
-        task_exec!(&self.task, async move |s| Ok(s.remote_peers_states.clone()))
+        task_exec!(&self.task, async move |s| s.remote_peers_states.clone())
             .await
             .ok()
             .unwrap_or_default()
@@ -395,7 +393,6 @@ impl DerpRelay {
         let _ = task_exec!(&self.task, async move |s| {
             telio_log_info!("Explicit relay reconnect requested");
             s.disconnect().await;
-            Ok(())
         })
         .await;
     }

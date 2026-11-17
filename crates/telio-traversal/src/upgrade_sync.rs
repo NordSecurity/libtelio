@@ -146,7 +146,6 @@ impl UpgradeSync {
     pub async fn set_public_key(&self, public_key: PublicKey) -> Result<()> {
         task_exec!(&self.task, async move |s| {
             s.set_public_key(public_key);
-            Ok(())
         })
         .await
         .map_err(|e| e.into())
@@ -156,12 +155,11 @@ impl UpgradeSync {
 #[async_trait]
 impl UpgradeSyncTrait for UpgradeSync {
     async fn get_upgrade_requests(&self) -> Result<HashMap<PublicKey, UpgradeRequest>> {
-        // FIXME: error handling with task_exec! seems to suck a lot. Need to fix that.
         task_exec!(&self.task, async move |s| {
-            Ok(s.upgrade_requests
+            s.upgrade_requests
                 .iter()
                 .map(|(pk, req)| ((*pk).into(), req.clone()))
-                .collect())
+                .collect()
         })
         .await
         .map_err(|e| e.into())
@@ -178,11 +176,9 @@ impl UpgradeSyncTrait for UpgradeSync {
     ) -> Result<bool> {
         let public_key = *public_key;
         task_exec!(&self.task, async move |s| {
-            Ok(
-                s.request_upgrade(&public_key, remote_endpoint, local_direct_endpoint, session)
-                    .await
-                    .unwrap_or_default(),
-            )
+            s.request_upgrade(&public_key, remote_endpoint, local_direct_endpoint, session)
+                .await
+                .unwrap_or_default()
         })
         .await
         .map_err(Error::from)
@@ -190,7 +186,7 @@ impl UpgradeSyncTrait for UpgradeSync {
 
     async fn get_accepted_session(&self, public_key: PublicKey) -> Option<SessionData> {
         task_exec!(&self.task, async move |s| {
-            Ok(s.accepted_direct_sessions.get(&public_key).cloned())
+            s.accepted_direct_sessions.get(&public_key).cloned()
         })
         .await
         .unwrap_or_default()
@@ -199,7 +195,6 @@ impl UpgradeSyncTrait for UpgradeSync {
     async fn clear_accepted_session(&self, public_key: PublicKey) {
         let _ = task_exec!(&self.task, async move |s| {
             s.accepted_direct_sessions.remove(&public_key);
-            Ok(())
         })
         .await;
     }

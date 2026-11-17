@@ -10,12 +10,15 @@ where
 
 /// Helper macro to write a more readable execution on task's state.
 ///
+/// The value returned by the closure is handed back to the caller as is.
+/// An `Err` returned from the closure is a regular value for the caller, it does not stop the task.
+///
 /// # Examples
 /// ```ignore
 /// // Full
-/// let res: Result<ReturnType, ExecError> = task_exec(&task, async move |state: &mut TaskState| -> Result<ReturnType, TaskState::Err> {
+/// let res: Result<ReturnType, ExecError> = task_exec(&task, async move |state: &mut TaskState| -> ReturnType {
 ///    // .. do something with state ..
-///    Ok(ReturnType)
+///    ReturnType
 /// }).await;
 /// ```
 ///
@@ -23,9 +26,9 @@ where
 /// This macro transforms this async closure into:
 ///
 /// ```ignore
-/// task.exec(move |state: &mut TaskState| -> BoxFuture<Output=Result<ReturnType, TaskState::Err>> async move {
+/// task.exec(move |state: &mut TaskState| -> BoxFuture<Output=ReturnType> async move {
 ///    // .. do something with state ..
-///    Ok(ReturnType)
+///    ReturnType
 /// }.boxed())
 /// ```
 #[macro_export]

@@ -59,7 +59,6 @@ impl Multiplexer {
         let _ = task_exec!(&self.task, async move |s| {
             s.relay_tx = PollSender::new(relay.tx);
             s.relay_rx = ReceiverStream::new(relay.rx);
-            Ok(())
         })
         .await;
     }
@@ -73,18 +72,17 @@ impl Multiplexer {
                 Ok(Some(mc)) => mc,
                 Ok(None) => {
                     telio_log_error!("Failed to join multi_channel");
-                    return Err(());
+                    return Err(Error::Stopped);
                 }
                 Err(e) => {
                     telio_log_error!("Failed to join multi_channel: {}", e);
-                    return Err(());
+                    return Err(Error::Stopped);
                 }
             };
-            Ok(mc.pipe())
+            mc.pipe().map_err(|_| Error::Occupied)
         })
         .await
         .map_err(|_| Error::Stopped)?
-        .map_err(|_| Error::Occupied)
     }
 
     /// "Destructor"
