@@ -105,17 +105,19 @@ class IperfServer:
         self._output_notifier = OutputNotifier()
         self._verbose = verbose
         self._unit = output_unit
-        self._process = connection.create_process([
-            *_iperf_env_prefix(connection.target_os),
-            get_iperf_binary(connection.target_os),
-            "--forceflush" if force_flush else "",
-            "-s",
-            "-f",
-            self._unit.to_iperf_flag(),
-            "-i",
-            "1",
-            "" if protocol == Protocol.Tcp else "--udp-counters-64bit",
-        ])
+        self._process = connection.create_process(
+            [
+                *_iperf_env_prefix(connection.target_os),
+                get_iperf_binary(connection.target_os),
+                "--forceflush" if force_flush else "",
+                "-s",
+                "-f",
+                self._unit.to_iperf_flag(),
+                "-i",
+                "1",
+                "" if protocol == Protocol.Tcp else "--udp-counters-64bit",
+            ]
+        )
 
     def get_stdout(self) -> str:
         return self._stdout
@@ -190,26 +192,28 @@ class IperfClient:
         self._protocol = protocol
         self._transmit_time = transmit_time
         self._unit = output_unit
-        self._process = connection.create_process([
-            *_iperf_env_prefix(connection.target_os),
-            get_iperf_binary(connection.target_os),
-            "-c",
-            server_ip,
-            "-t",
-            f"{transmit_time}s",
-            "-l",
-            f"{buf_length}",
-            "-i",
-            "1",
-            "-f",
-            self._unit.to_iperf_flag(),
-            "" if protocol == Protocol.Tcp else "-u",
-            "" if protocol == Protocol.Tcp else "--udp-counters-64bit",
-            "-b",
-            "10G",
-            "" if send else "-R",
-            "--json" if json_output else "",
-        ])
+        self._process = connection.create_process(
+            [
+                *_iperf_env_prefix(connection.target_os),
+                get_iperf_binary(connection.target_os),
+                "-c",
+                server_ip,
+                "-t",
+                f"{transmit_time}s",
+                "-l",
+                f"{buf_length}",
+                "-i",
+                "1",
+                "-f",
+                self._unit.to_iperf_flag(),
+                "" if protocol == Protocol.Tcp else "-u",
+                "" if protocol == Protocol.Tcp else "--udp-counters-64bit",
+                "-b",
+                "10G",
+                "" if send else "-R",
+                "--json" if json_output else "",
+            ]
+        )
 
     async def done(self) -> None:
         await self._process.is_done()

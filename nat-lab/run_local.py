@@ -230,10 +230,12 @@ def _run_tests(args) -> None:
         durations_path = Path(args.output_durations)
 
     if durations_path is not None:
-        pytest_cmd.extend([
-            "--store-durations",
-            f"--durations-path={durations_path.absolute()}",
-        ])
+        pytest_cmd.extend(
+            [
+                "--store-durations",
+                f"--durations-path={durations_path.absolute()}",
+            ]
+        )
 
     pytest_cmd += get_pytest_arguments(args)
 

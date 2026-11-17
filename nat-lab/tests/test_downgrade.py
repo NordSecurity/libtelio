@@ -43,10 +43,12 @@ def _generate_setup_parameter_pair(
     "setup_params",
     [
         pytest.param(
-            _generate_setup_parameter_pair([
-                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
-                (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
-            ])
+            _generate_setup_parameter_pair(
+                [
+                    (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
+                    (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
+                ]
+            )
         )
     ],
 )
@@ -105,10 +107,12 @@ async def test_downgrade_using_link_detection(
     "setup_params",
     [
         pytest.param(
-            _generate_setup_parameter_pair([
-                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
-                (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
-            ])  # Disable enhanced detection via pinging to reduce the test duration
+            _generate_setup_parameter_pair(
+                [
+                    (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
+                    (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
+                ]
+            )  # Disable enhanced detection via pinging to reduce the test duration
         )
     ],
 )

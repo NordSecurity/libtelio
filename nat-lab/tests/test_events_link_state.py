@@ -105,8 +105,7 @@ def _generate_setup_parameter_pair(
             ip_stack=ip_stack,
             # TODO: Remove this if you're adding a "vpn with mesh" test
             is_meshnet=not vpn,
-        )
-        for tag, adapter in cfg
+        ) for tag, adapter in cfg
     ]
 
 
@@ -153,16 +152,18 @@ FEATURE_ENABLED_PARAMS = [
 
 
 FEATURE_DISABLED_PARAMS = [
-    pytest.param([
-        SetupParameters(
-            connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-            adapter_type_override=TelioAdapterType.NEP_TUN,
-        ),
-        SetupParameters(
-            connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-            adapter_type_override=TelioAdapterType.NEP_TUN,
-        ),
-    ])
+    pytest.param(
+        [
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+            ),
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+            ),
+        ]
+    )
 ]
 
 # Beta node sends the keepalive packets with period according with its wg implementation, impacting
@@ -443,31 +444,35 @@ class ICMP_control:
         self._conn = conn
 
     async def __aenter__(self):
-        proc = self._conn.create_process([
-            "iptables",
-            "--insert",
-            "INPUT",
-            "--protocol",
-            "icmp",
-            "--icmp-type",
-            "echo-request",
-            "--jump",
-            "DROP",
-        ])
+        proc = self._conn.create_process(
+            [
+                "iptables",
+                "--insert",
+                "INPUT",
+                "--protocol",
+                "icmp",
+                "--icmp-type",
+                "echo-request",
+                "--jump",
+                "DROP",
+            ]
+        )
         await proc.execute()
 
     async def __aexit__(self, *_):
-        proc = self._conn.create_process([
-            "iptables",
-            "--delete",
-            "INPUT",
-            "--protocol",
-            "icmp",
-            "--icmp-type",
-            "echo-request",
-            "--jump",
-            "DROP",
-        ])
+        proc = self._conn.create_process(
+            [
+                "iptables",
+                "--delete",
+                "INPUT",
+                "--protocol",
+                "icmp",
+                "--icmp-type",
+                "echo-request",
+                "--jump",
+                "DROP",
+            ]
+        )
         await proc.execute()
 
 

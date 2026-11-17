@@ -781,31 +781,35 @@ class TestCustomPqUpgraderIp:
 
     async def _add_pq_upgrader_alias(self, nlx_conn: Connection) -> None:
         # 'replace' avoids "File exists" from a prior leaked alias.
-        await nlx_conn.create_process([
-            "ip",
-            "addr",
-            "replace",
-            f"{self.PQ_UPGRADER_ALIAS_IP}/32",
-            "dev",
-            "nlx0",
-        ]).execute()
-        await nlx_conn.create_process([
-            "iptables",
-            "-t",
-            "nat",
-            "-A",
-            "PREROUTING",
-            "-d",
-            self.PQ_UPGRADER_ALIAS_IP,
-            "-p",
-            "udp",
-            "--dport",
-            str(self.PQ_UPGRADER_PORT),
-            "-j",
-            "DNAT",
-            "--to-destination",
-            f"{self.PQ_UPGRADER_REAL_IP}:{self.PQ_UPGRADER_PORT}",
-        ]).execute()
+        await nlx_conn.create_process(
+            [
+                "ip",
+                "addr",
+                "replace",
+                f"{self.PQ_UPGRADER_ALIAS_IP}/32",
+                "dev",
+                "nlx0",
+            ]
+        ).execute()
+        await nlx_conn.create_process(
+            [
+                "iptables",
+                "-t",
+                "nat",
+                "-A",
+                "PREROUTING",
+                "-d",
+                self.PQ_UPGRADER_ALIAS_IP,
+                "-p",
+                "udp",
+                "--dport",
+                str(self.PQ_UPGRADER_PORT),
+                "-j",
+                "DNAT",
+                "--to-destination",
+                f"{self.PQ_UPGRADER_REAL_IP}:{self.PQ_UPGRADER_PORT}",
+            ]
+        ).execute()
 
     async def _remove_pq_upgrader_alias(self, nlx_conn: Connection) -> None:
         iptables_del = (

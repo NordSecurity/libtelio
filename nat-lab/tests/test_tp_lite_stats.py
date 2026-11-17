@@ -105,15 +105,17 @@ async def _dig_magic_dns(connection: Connection, domain: str) -> tuple[str, str]
     the TTL is the second whitespace-separated field, same as in
     test_dns.py::test_dns_ttl_value.
     """
-    process = await connection.create_process([
-        "dig",
-        "+noall",
-        "+nocmd",
-        "+answer",
-        "+timeout=5",
-        domain,
-        f"@{config.LIBTELIO_DNS_IPV4}",
-    ]).execute()
+    process = await connection.create_process(
+        [
+            "dig",
+            "+noall",
+            "+nocmd",
+            "+answer",
+            "+timeout=5",
+            domain,
+            f"@{config.LIBTELIO_DNS_IPV4}",
+        ]
+    ).execute()
     return process.get_stdout(), process.get_stderr()
 
 
@@ -269,7 +271,7 @@ class TestTpLiteStats:
         )
 
         await _trigger_stats_collection(connection)
-        (num_calls, domains, metrics) = await client.tp_lite.get_stats()
+        num_calls, domains, metrics = await client.tp_lite.get_stats()
 
         blocked_domain_names = [d.domain_name for d in domains]
 
@@ -294,7 +296,7 @@ class TestTpLiteStats:
         await _query_blocked_expect_failure(connection)
 
         await _trigger_stats_collection(connection)
-        (num_calls, _, _) = await client.tp_lite.get_stats()
+        num_calls, _, _ = await client.tp_lite.get_stats()
         assert num_calls == 0
 
     @pytest.mark.parametrize(
@@ -364,7 +366,7 @@ class TestTpLiteStats:
 
         await _query_blocked_expect_failure(connection)
         await _trigger_stats_collection(connection)
-        (num_calls, domains, metrics) = await client.tp_lite.get_stats()
+        num_calls, domains, metrics = await client.tp_lite.get_stats()
         assert num_calls == 1
         assert BLOCKED_NXDOMAIN in [d.domain_name for d in domains]
         assert metrics.num_requests == 1
@@ -407,13 +409,13 @@ class TestTpLiteStats:
             await client.tp_lite.enable_stats_collection(_tp_lite_config())
 
             await _trigger_stats_collection(connection)
-            (num_calls, _, _) = await client.tp_lite.get_stats()
+            num_calls, _, _ = await client.tp_lite.get_stats()
             assert num_calls == 0
 
             await _query_blocked_expect_failure(connection)
 
             await _trigger_stats_collection(connection)
-            (num_calls, domains, metrics) = await client.tp_lite.get_stats()
+            num_calls, domains, metrics = await client.tp_lite.get_stats()
 
             assert num_calls == 1
             blocked_domain_names = [d.domain_name for d in domains]
@@ -533,7 +535,7 @@ class TestTpLiteStats:
         await client.tp_lite.enable_stats_collection(_tp_lite_config())
         await _query_blocked_expect_failure(connection)
         await _trigger_stats_collection(connection)
-        (num_calls, domains, _) = await client.tp_lite.get_stats()
+        num_calls, domains, _ = await client.tp_lite.get_stats()
         assert num_calls == 1
         assert BLOCKED_NXDOMAIN in [d.domain_name for d in domains]
         await client.tp_lite.disable_stats_collection()
@@ -577,7 +579,7 @@ class TestTpLiteStats:
 
         await _query_blocked_expect_failure(connection)
         await _trigger_stats_collection(connection)
-        (num_calls, domains, _) = await client.tp_lite.get_stats()
+        num_calls, domains, _ = await client.tp_lite.get_stats()
         assert num_calls == 1
         assert BLOCKED_NXDOMAIN in [d.domain_name for d in domains]
 
@@ -590,7 +592,7 @@ class TestTpLiteStats:
         )
         await _query_blocked_expect_failure(connection)
         await _trigger_stats_collection(connection)
-        (num_calls, domains, metrics) = await client.tp_lite.get_stats()
+        num_calls, domains, metrics = await client.tp_lite.get_stats()
         assert num_calls == 1
         assert BLOCKED_NXDOMAIN in [d.domain_name for d in domains]
         assert metrics.num_requests == 1
@@ -635,7 +637,7 @@ class TestTpLiteStats:
 
         await _query_blocked_expect_failure(connection)
         await _trigger_stats_collection(connection)
-        (num_calls, domains, metrics) = await client.tp_lite.get_stats()
+        num_calls, domains, metrics = await client.tp_lite.get_stats()
         assert num_calls == 1
         assert BLOCKED_NXDOMAIN in [d.domain_name for d in domains]
         assert metrics.num_requests == 1
@@ -689,7 +691,7 @@ class TestTpLiteStats:
         )
 
         await _trigger_stats_collection(connection)
-        (num_calls, domains, metrics) = await client.tp_lite.get_stats()
+        num_calls, domains, metrics = await client.tp_lite.get_stats()
         assert num_calls == 1
         assert BLOCKED_NXDOMAIN in [d.domain_name for d in domains]
         assert metrics.num_requests == 1
@@ -742,7 +744,7 @@ class TestTpLiteStats:
             )
 
         await _trigger_stats_collection(connection)
-        (num_calls, domains, metrics) = await client.tp_lite.get_stats()
+        num_calls, domains, metrics = await client.tp_lite.get_stats()
 
         blocked_domain_names = [d.domain_name for d in domains]
 

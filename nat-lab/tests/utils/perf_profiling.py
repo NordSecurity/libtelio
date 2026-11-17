@@ -101,21 +101,27 @@ class PerfProfiler:
         await self.connection.create_process(
             ["sh", "-c", f"mkdir -p {libtelio_debug_path}"]
         ).execute()
-        await self.connection.create_process([
-            "sh",
-            "-c",
-            f"cp {uniffi_dir}/libtelio.so {libtelio_debug_path}/libtelio.so",
-        ]).execute()
-        await self.connection.create_process([
-            "sh",
-            "-c",
-            f"cp {uniffi_dir}/libtelio.so.debug {libtelio_debug_path}/libtelio.so.debug",
-        ]).execute()
-        await self.connection.create_process([
-            "sh",
-            "-c",
-            f"objcopy --add-gnu-debuglink={libtelio_debug_path}/libtelio.so.debug {libtelio_debug_path}/libtelio.so",
-        ]).execute()
+        await self.connection.create_process(
+            [
+                "sh",
+                "-c",
+                f"cp {uniffi_dir}/libtelio.so {libtelio_debug_path}/libtelio.so",
+            ]
+        ).execute()
+        await self.connection.create_process(
+            [
+                "sh",
+                "-c",
+                f"cp {uniffi_dir}/libtelio.so.debug {libtelio_debug_path}/libtelio.so.debug",
+            ]
+        ).execute()
+        await self.connection.create_process(
+            [
+                "sh",
+                "-c",
+                f"objcopy --add-gnu-debuglink={libtelio_debug_path}/libtelio.so.debug {libtelio_debug_path}/libtelio.so",
+            ]
+        ).execute()
 
     async def generate_flame_graphs(self) -> None:
         """Generate flame graph charts and folded stacks from perf data."""

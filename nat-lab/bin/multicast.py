@@ -39,7 +39,7 @@ def ssdp_server(timeout: int | None, ip: str):
 
     print("Listening", flush=True)
     while True:
-        (buf, peer_addr) = s.recvfrom(2048)
+        buf, peer_addr = s.recvfrom(2048)
         if buf == SSDP_REQ:
             s.sendto(SSDP_RESP, peer_addr)
             break

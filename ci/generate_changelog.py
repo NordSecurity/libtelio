@@ -4,7 +4,6 @@ import argparse
 import re
 from typing import Optional
 
-
 # Regexes for ticket number in filename
 TICKET_NUMBER = r"^([a-zA-Z]{1,10})[\s_-]?(\d{1,6})"
 

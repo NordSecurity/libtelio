@@ -130,12 +130,14 @@ class ClientEvents:
     async def wait_for_state_on_any_derp(
         self, states: List[RelayState], timeout: Optional[float] = None
     ) -> None:
-        async with asyncio_util.run_async_contexts([
-            self._client.get_events().wait_for_state_derp(
-                str(derp.ipv4), states, timeout
-            )
-            for derp in DERP_SERVERS
-        ]) as futures:
+        async with asyncio_util.run_async_contexts(
+            [
+                self._client.get_events().wait_for_state_derp(
+                    str(derp.ipv4), states, timeout
+                )
+                for derp in DERP_SERVERS
+            ]
+        ) as futures:
             try:
                 while not any(fut.done() for fut in futures):
                     await asyncio.sleep(0.01)
@@ -145,14 +147,16 @@ class ClientEvents:
     async def wait_for_every_derp_disconnection(
         self, timeout: Optional[float] = None
     ) -> None:
-        async with asyncio_util.run_async_contexts([
-            self._client.get_events().wait_for_state_derp(
-                str(derp.ipv4),
-                [RelayState.DISCONNECTED, RelayState.CONNECTING],
-                timeout,
-            )
-            for derp in DERP_SERVERS
-        ]) as futures:
+        async with asyncio_util.run_async_contexts(
+            [
+                self._client.get_events().wait_for_state_derp(
+                    str(derp.ipv4),
+                    [RelayState.DISCONNECTED, RelayState.CONNECTING],
+                    timeout,
+                )
+                for derp in DERP_SERVERS
+            ]
+        ) as futures:
             try:
                 while not all(fut.done() for fut in futures):
                     await asyncio.sleep(0.1)
@@ -171,12 +175,14 @@ class ClientEvents:
     async def wait_for_event_on_any_derp(
         self, states: List[RelayState], timeout: Optional[float] = None
     ) -> None:
-        async with asyncio_util.run_async_contexts([
-            self._client.get_events().wait_for_event_derp(
-                str(derp.ipv4), states, timeout
-            )
-            for derp in DERP_SERVERS
-        ]) as futures:
+        async with asyncio_util.run_async_contexts(
+            [
+                self._client.get_events().wait_for_event_derp(
+                    str(derp.ipv4), states, timeout
+                )
+                for derp in DERP_SERVERS
+            ]
+        ) as futures:
             try:
                 while not any(fut.done() for fut in futures):
                     await asyncio.sleep(0.1)

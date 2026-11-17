@@ -105,12 +105,14 @@ async def trusted_core_api_cert(
     """Temporarily add the natlab core-api CA to the VM's system trust store."""
     backup = "/tmp/ca-certificates.crt.natlab-backup"
     await gateway_connection.create_process(["cp", CA_BUNDLE_PATH, backup]).execute()
-    await gateway_connection.create_process([
-        "sh",
-        "-c",
-        "sed -n '/BEGIN CERTIFICATE/,/END CERTIFICATE/p'"
-        f" {CORE_API_CA_CERTIFICATE_PATH} >> {CA_BUNDLE_PATH}",
-    ]).execute()
+    await gateway_connection.create_process(
+        [
+            "sh",
+            "-c",
+            "sed -n '/BEGIN CERTIFICATE/,/END CERTIFICATE/p'"
+            f" {CORE_API_CA_CERTIFICATE_PATH} >> {CA_BUNDLE_PATH}",
+        ]
+    ).execute()
     yield
     await gateway_connection.create_process(["mv", backup, CA_BUNDLE_PATH]).execute()
 

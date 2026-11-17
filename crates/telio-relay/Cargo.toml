@@ -16,6 +16,7 @@ tokio-stream = { default-features = false, version = "0.1.18" }
 
 async-trait.workspace = true
 bytes.workspace = true
+aead = { version = "0.6.1", default-features = false }
 crypto_box.workspace = true
 futures.workspace = true
 httparse.workspace = true

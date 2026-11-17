@@ -207,12 +207,14 @@ async def test_nordvpnlite_reload_no_config_change() -> None:
             await nordvpnlite.connection.create_process(["sync"]).execute()
 
             try:
-                await nordvpnlite.connection.create_process([
-                    "grep",
-                    "-q",
-                    "Config reloaded, restarting daemon",
-                    str(nordvpnlite.config.paths.daemon_log),
-                ]).execute()
+                await nordvpnlite.connection.create_process(
+                    [
+                        "grep",
+                        "-q",
+                        "Config reloaded, restarting daemon",
+                        str(nordvpnlite.config.paths.daemon_log),
+                    ]
+                ).execute()
                 pytest.fail("Daemon restarted after reload with unchanged config")
             except ProcessExecError:
                 pass  # Expected: restart message absent

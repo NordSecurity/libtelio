@@ -311,7 +311,7 @@ async def test_blocking_incoming_connections_from_exit_node(
 
     # Both nodes should have unique ips
 
-    (ip_alpha, ip_exit_node) = await get_external_ips()
+    ip_alpha, ip_exit_node = await get_external_ips()
     assert ip_alpha != ip_exit_node
 
     # Start routing traffic via the exit node
@@ -322,7 +322,7 @@ async def test_blocking_incoming_connections_from_exit_node(
 
     # Both nodes should have the same external ip
 
-    (ip_alpha, ip_exit_node) = await get_external_ips()
+    ip_alpha, ip_exit_node = await get_external_ips()
     assert ip_alpha == ip_exit_node
 
     # Ping should still work
@@ -343,7 +343,7 @@ async def test_blocking_incoming_connections_from_exit_node(
 
     # Check that connecting to external services still works
 
-    (ip_alpha, ip_exit_node) = await get_external_ips()
+    ip_alpha, ip_exit_node = await get_external_ips()
     assert ip_alpha == ip_exit_node
 
 
@@ -415,7 +415,7 @@ async def test_mesh_firewall_file_share_port(
         allow_peer_send_files=allow_peer_send_file,
     )
 
-    (CLIENT_PROTO, CLIENT_ALPHA_IP, CLIENT_BETA_IP) = get_ips_and_stack(alpha, beta)
+    CLIENT_PROTO, CLIENT_ALPHA_IP, CLIENT_BETA_IP = get_ips_and_stack(alpha, beta)
 
     env = await setup_mesh_nodes_factory(
         [
@@ -527,7 +527,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
     beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=False)
 
     PORT = 12345
-    (CLIENT_PROTO, CLIENT_ALPHA_IP, CLIENT_BETA_IP) = get_ips_and_stack(alpha, beta)
+    CLIENT_PROTO, CLIENT_ALPHA_IP, CLIENT_BETA_IP = get_ips_and_stack(alpha, beta)
 
     env = await setup_mesh_nodes_factory(
         [
@@ -635,7 +635,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
     beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=False)
 
     PORT = 12345
-    (CLIENT_PROTO, CLIENT_ALPHA_IP, CLIENT_BETA_IP) = get_ips_and_stack(alpha, beta)
+    CLIENT_PROTO, CLIENT_ALPHA_IP, CLIENT_BETA_IP = get_ips_and_stack(alpha, beta)
 
     env = await setup_mesh_nodes_factory(
         [

@@ -277,25 +277,27 @@ def test_derp_conn_info() -> None:
 def test_lana_event_validator() -> None:
     test_validator = analytics.EventValidator.new_with_basic_validators(
         "beta", meshnet_id="86bee206-9082"
-    ).add_validator_list([
-        analytics.ConnectivityMatrixValidator(
-            exists=True,
-            no_of_connections=3,
-            all_connections_up=True,
-        ),
-        analytics.MembersValidator(
-            exists=True,
-            contains=["gamma", "beta"],
-            does_not_contain=["alpha"],
-        ),
-        analytics.ExternalLinksValidator(
-            exists=True,
-            contains=["delta", "charlie"],
-            does_not_contain=["alpha", "beta", "gamma"],
-            all_connections_up=True,
-            no_of_connections=2,
-        ),
-    ])
+    ).add_validator_list(
+        [
+            analytics.ConnectivityMatrixValidator(
+                exists=True,
+                no_of_connections=3,
+                all_connections_up=True,
+            ),
+            analytics.MembersValidator(
+                exists=True,
+                contains=["gamma", "beta"],
+                does_not_contain=["alpha"],
+            ),
+            analytics.ExternalLinksValidator(
+                exists=True,
+                contains=["delta", "charlie"],
+                does_not_contain=["alpha", "beta", "gamma"],
+                all_connections_up=True,
+                no_of_connections=2,
+            ),
+        ]
+    )
     res = test_validator.validate(TEST_EVENT)
     assert res[0], res[1]
     res = test_validator.validate(DUMMY_EVENT)

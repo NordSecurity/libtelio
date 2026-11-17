@@ -97,6 +97,8 @@ async def test_connected_state_after_routing(
     await ping(conn_alpha.connection, beta.ip_addresses[0])
 
     # LLT-5532: To be cleaned up...
-    client_beta.allow_errors([
-        "neptun::device.*Decapsulate error error=UnexpectedPacket",
-    ])
+    client_beta.allow_errors(
+        [
+            "neptun::device.*Decapsulate error error=UnexpectedPacket",
+        ]
+    )

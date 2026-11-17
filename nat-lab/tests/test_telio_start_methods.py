@@ -33,10 +33,12 @@ def _generate_setup_parameters(
 
 
 async def test_start_with_tun() -> None:
-    setup_params = _generate_setup_parameters([
-        ConnectionTag.DOCKER_CONE_CLIENT_1,
-        ConnectionTag.DOCKER_CONE_CLIENT_2,
-    ])
+    setup_params = _generate_setup_parameters(
+        [
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            ConnectionTag.DOCKER_CONE_CLIENT_2,
+        ]
+    )
 
     async with AsyncExitStack() as exit_stack:
         env = await setup_mesh_nodes(exit_stack, setup_params)
@@ -59,10 +61,12 @@ async def test_start_with_tun() -> None:
     ],
 )
 async def test_start_with_tun_and_switch_it_at_runtime(alpha_tag) -> None:
-    setup_params = _generate_setup_parameters([
-        alpha_tag,
-        ConnectionTag.DOCKER_CONE_CLIENT_2,
-    ])
+    setup_params = _generate_setup_parameters(
+        [
+            alpha_tag,
+            ConnectionTag.DOCKER_CONE_CLIENT_2,
+        ]
+    )
 
     tun_name_prefix = "utun" if alpha_tag == ConnectionTag.VM_MAC else "tun"
 
@@ -96,10 +100,12 @@ async def test_start_with_tun_and_switch_it_at_runtime(alpha_tag) -> None:
     ],
 )
 async def test_start_with_config(interface_name) -> None:
-    setup_params = _generate_setup_parameters([
-        ConnectionTag.DOCKER_CONE_CLIENT_1,
-        ConnectionTag.DOCKER_CONE_CLIENT_2,
-    ])
+    setup_params = _generate_setup_parameters(
+        [
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            ConnectionTag.DOCKER_CONE_CLIENT_2,
+        ]
+    )
 
     async with AsyncExitStack() as exit_stack:
         env = await setup_mesh_nodes(exit_stack, setup_params)
@@ -138,22 +144,26 @@ async def test_start_named_ext_if_filter() -> None:
                 await output_notifier.handle_output(output)
 
             client = await exit_stack.enter_async_context(
-                conn.create_process([
-                    get_libtelio_binary_path("tcli.exe", conn),
-                    "--less-spam",
-                    '-f { "paths": { "priority": ["relay"]} }',
-                ]).run(on_stdout_stderr, on_stdout_stderr)
+                conn.create_process(
+                    [
+                        get_libtelio_binary_path("tcli.exe", conn),
+                        "--less-spam",
+                        '-f { "paths": { "priority": ["relay"]} }',
+                    ]
+                ).run(on_stdout_stderr, on_stdout_stderr)
             )
             await client.wait_stdin_ready()
 
             try:
-                await client.escape_and_write_stdin([
-                    "dev",
-                    "start",
-                    "wireguard-nt",
-                    router.get_interface_name(),
-                    str(node.private_key),
-                ])
+                await client.escape_and_write_stdin(
+                    [
+                        "dev",
+                        "start",
+                        "wireguard-nt",
+                        router.get_interface_name(),
+                        str(node.private_key),
+                    ]
+                )
                 await started_event.wait()
                 yield
             finally:
@@ -198,7 +208,9 @@ async def test_start_named_ext_if_filter() -> None:
         await alpha_client.set_meshnet_config(env.api.get_meshnet_config(alpha_node.id))
 
         # Wait for direct stun connections and wait for logs from windows.rs
-        await asyncio.gather(*[
-            alpha_client.log.wait_for(f"Interface {interface} is not default!")
-            for interface in ext_if_filter
-        ])
+        await asyncio.gather(
+            *[
+                alpha_client.log.wait_for(f"Interface {interface} is not default!")
+                for interface in ext_if_filter
+            ]
+        )

@@ -3,7 +3,7 @@ import hashlib
 import pytest
 import uuid
 from contextlib import AsyncExitStack
-from Pyro5.errors import CommunicationError  # type:ignore
+from Pyro5.errors import CommunicationError  # type: ignore
 from tests.config import WINDOWS_NETWORK_ADAPTER_REGISTRY_KEY, UNIFFI_PATH_WINDOWS_VM
 from tests.helpers import (
     SetupParameters,
@@ -78,15 +78,17 @@ async def test_wg_adapter_cleanup_loop_clean_shutdown(
 
             conn, *_ = [conn.connection for conn in env.connections]
             assert (
-                "WireGuard"
-                in (await conn.create_process(QUERY_CMD).execute()).get_stdout()
+                "WireGuard" in (
+                    await conn.create_process(QUERY_CMD).execute()
+                ).get_stdout()
             )
 
         # After clean exit, verify adapter was properly cleaned up
         async with new_connection_by_tag(conn_tag) as conn:
             assert (
-                "WireGuard"
-                not in (await conn.create_process(QUERY_CMD).execute()).get_stdout()
+                "WireGuard" not in (
+                    await conn.create_process(QUERY_CMD).execute()
+                ).get_stdout()
             )
 
 
@@ -117,8 +119,9 @@ async def test_wg_adapter_cleanup_loop_dirty_shutdown(
 
                 conn, *_ = [conn.connection for conn in env.connections]
                 assert (
-                    "WireGuard"
-                    in (await conn.create_process(QUERY_CMD).execute()).get_stdout()
+                    "WireGuard" in (
+                        await conn.create_process(QUERY_CMD).execute()
+                    ).get_stdout()
                 )
 
                 await conn.create_process(
@@ -130,8 +133,9 @@ async def test_wg_adapter_cleanup_loop_dirty_shutdown(
         # Check if libtelio left hanging wg-nt adapter
         async with new_connection_by_tag(conn_tag) as conn:
             if (
-                "WireGuard"
-                not in (await conn.create_process(QUERY_CMD).execute()).get_stdout()
+                "WireGuard" not in (
+                    await conn.create_process(QUERY_CMD).execute()
+                ).get_stdout()
             ):
                 log.info(
                     "No orphaned adapter found after dirty shutdown iteration %d", i
@@ -156,8 +160,9 @@ async def test_wg_adapter_cleanup_loop_dirty_shutdown(
             client, *_ = env.clients
 
             assert (
-                "WireGuard"
-                in (await conn.create_process(QUERY_CMD).execute()).get_stdout()
+                "WireGuard" in (
+                    await conn.create_process(QUERY_CMD).execute()
+                ).get_stdout()
             )
             assert ORPHANED_ADAPTER_REMOVED_LOG in await client.log.get()
 

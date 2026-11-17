@@ -487,10 +487,12 @@ async def test_event_content_exit_through_peer(
     alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        api, (alpha, beta) = setup_api([
-            (False, alpha_setup_params.ip_stack),
-            (False, beta_setup_params.ip_stack),
-        ])
+        api, (alpha, beta) = setup_api(
+            [
+                (False, alpha_setup_params.ip_stack),
+                (False, beta_setup_params.ip_stack),
+            ]
+        )
         alpha.nickname = "alpha"
         beta.nickname = "BETA"
         alpha.set_peer_firewall_settings(beta.id)
@@ -642,7 +644,7 @@ async def test_event_content_meshnet_node_upgrade_direct(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
-        (alpha, beta) = api.default_config_two_nodes(
+        alpha, beta = api.default_config_two_nodes(
             alpha_setup_params.is_local,
             beta_setup_params.is_local,
             alpha_setup_params.ip_stack,
@@ -650,13 +652,13 @@ async def test_event_content_meshnet_node_upgrade_direct(
         )
         alpha.set_peer_firewall_settings(beta.id, True, True)
         beta.set_peer_firewall_settings(alpha.id, True, True)
-        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+        connection_alpha, alpha_conn_tracker = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 alpha_setup_params.connection_tag,
                 alpha_setup_params.connection_tracker_config,
             )
         )
-        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+        connection_beta, beta_conn_tracker = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 beta_setup_params.connection_tag,
                 beta_setup_params.connection_tracker_config,

@@ -71,15 +71,17 @@ async def run_mqtt_listener(
         await output_notifier.handle_output(output)
 
     mqtt_process = await exit_stack.enter_async_context(
-        connection.create_process([
-            "python3",
-            "-u",
-            "/opt/bin/mqtt-listener.py",
-            mqtt_broker_host,
-            mqtt_broker_port,
-            mqtt_broker_user,
-            mqtt_broker_password,
-        ]).run(
+        connection.create_process(
+            [
+                "python3",
+                "-u",
+                "/opt/bin/mqtt-listener.py",
+                mqtt_broker_host,
+                mqtt_broker_port,
+                mqtt_broker_user,
+                mqtt_broker_password,
+            ]
+        ).run(
             stdout_callback=stdout_stderr_callback,
             stderr_callback=stdout_stderr_callback,
         )

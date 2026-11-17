@@ -327,7 +327,9 @@ NLX_SERVER: Dict[str, Union[str, int]] = {
     "port": 1023,  # Select some port in non-ephemeral port range to avoid clashes
     "container": "nat-lab-nlx-01-1",
     "type": "nordlynx",
-    "public_key": "csmoelQgK1QvyE5+XmZnXaPNt/zCgk84BG6BwfcmOFE=",  # This is a test only public key, never used outside of tests
+    "public_key": (
+        "csmoelQgK1QvyE5+XmZnXaPNt/zCgk84BG6BwfcmOFE="
+    ),  # This is a test only public key, never used outside of tests
 }
 
 WG_SERVERS = [WG_SERVER, WG_SERVER_2, NLX_SERVER]

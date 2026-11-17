@@ -111,42 +111,54 @@ UHP_WORKING_PATHS_PARAMS = [
 
 async def _check_if_true_direct_connection(env: Environment) -> None:
     async with AsyncExitStack() as temp_exit_stack:
-        await asyncio.gather(*[
-            temp_exit_stack.enter_async_context(
-                client.get_router().break_tcp_conn_to_host(str(server.ipv4))
-            )
-            for client, server in itertools.product(env.clients, DERP_SERVERS)
-        ])
+        await asyncio.gather(
+            *[
+                temp_exit_stack.enter_async_context(
+                    client.get_router().break_tcp_conn_to_host(str(server.ipv4))
+                )
+                for client, server in itertools.product(env.clients, DERP_SERVERS)
+            ]
+        )
 
-        await asyncio.gather(*[
-            client.events.wait_for_state_on_any_derp(
-                [RelayState.CONNECTING, RelayState.DISCONNECTED]
-            )
-            for client in env.clients
-        ])
+        await asyncio.gather(
+            *[
+                client.events.wait_for_state_on_any_derp(
+                    [RelayState.CONNECTING, RelayState.DISCONNECTED]
+                )
+                for client in env.clients
+            ]
+        )
 
         await ping_between_all_nodes(env)
 
-    await asyncio.gather(*[
-        client.events.wait_for_state_on_any_derp([RelayState.CONNECTED])
-        for client in env.clients
-    ])
+    await asyncio.gather(
+        *[
+            client.events.wait_for_state_on_any_derp([RelayState.CONNECTED])
+            for client in env.clients
+        ]
+    )
 
 
 @asynccontextmanager
 async def _disable_direct_connection(env: Environment, reflexive_ips: List[str]):
     async with AsyncExitStack() as temp_exit_stack:
-        await asyncio.gather(*[
-            temp_exit_stack.enter_async_context(
-                client.get_router().disable_path(reflexive_ip)
-            )
-            for client, reflexive_ip in itertools.product(env.clients, reflexive_ips)
-        ])
+        await asyncio.gather(
+            *[
+                temp_exit_stack.enter_async_context(
+                    client.get_router().disable_path(reflexive_ip)
+                )
+                for client, reflexive_ip in itertools.product(
+                    env.clients, reflexive_ips
+                )
+            ]
+        )
 
-        await asyncio.gather(*[
-            conn.connection.create_process(["conntrack", "-F"]).execute()
-            for conn in env.connections
-        ])
+        await asyncio.gather(
+            *[
+                conn.connection.create_process(["conntrack", "-F"]).execute()
+                for conn in env.connections
+            ]
+        )
 
         yield
 
@@ -161,8 +173,7 @@ async def _disable_direct_connection(env: Environment, reflexive_ips: List[str])
             marks=(
                 pytest.mark.fullcone
                 if any(
-                    conn_tag
-                    in [
+                    conn_tag in [
                         ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
                         ConnectionTag.DOCKER_FULLCONE_CLIENT_2,
                     ]
@@ -185,31 +196,35 @@ async def test_direct_working_paths(
         await _check_if_true_direct_connection(env)
         async with _disable_direct_connection(env, reflexive_ips):
             log.info("Downgrade to relay connections")
-            await asyncio.gather(*[
+            await asyncio.gather(
+                *[
+                    await exit_stack.enter_async_context(
+                        run_async_context(
+                            client.events.wait_for_state_peer(
+                                node.public_key, [NodeState.CONNECTED], [PathType.RELAY]
+                            )
+                        )
+                    )
+                    for client, node in itertools.product(env.clients, env.nodes)
+                    if not client.is_node(node)
+                ]
+            )
+            await ping_between_all_nodes(env)
+
+        log.info("Reconnect to direct connections")
+        await asyncio.gather(
+            *[
                 await exit_stack.enter_async_context(
                     run_async_context(
                         client.events.wait_for_state_peer(
-                            node.public_key, [NodeState.CONNECTED], [PathType.RELAY]
+                            node.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
                         )
                     )
                 )
                 for client, node in itertools.product(env.clients, env.nodes)
                 if not client.is_node(node)
-            ])
-            await ping_between_all_nodes(env)
-
-        log.info("Reconnect to direct connections")
-        await asyncio.gather(*[
-            await exit_stack.enter_async_context(
-                run_async_context(
-                    client.events.wait_for_state_peer(
-                        node.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
-                    )
-                )
-            )
-            for client, node in itertools.product(env.clients, env.nodes)
-            if not client.is_node(node)
-        ])
+            ]
+        )
 
         log.info("Test direct connection again")
         await _check_if_true_direct_connection(env)
@@ -260,13 +275,15 @@ async def test_direct_working_paths(
                     )
                     await asyncio.wait_for(possible_relay_events[connection][node], 1)
 
-            await asyncio.gather(*[
-                ping_timeout(conn.connection, node)
-                for (client, conn), node in itertools.product(
-                    zip(env.clients, env.connections), env.nodes
-                )
-                if not client.is_node(node)
-            ])
+            await asyncio.gather(
+                *[
+                    ping_timeout(conn.connection, node)
+                    for (client, conn), node in itertools.product(
+                        zip(env.clients, env.connections), env.nodes
+                    )
+                    if not client.is_node(node)
+                ]
+            )
 
         log.info("Re-enable direct connection and wait for pings")
         await ping_between_all_nodes(env)
@@ -280,10 +297,12 @@ async def test_direct_working_paths(
 async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_analytics() -> (
     None
 ):
-    setup_params = _generate_setup_parameters([
-        (ConnectionTag.DOCKER_UPNP_CLIENT_1, [EndpointProvider.UPNP]),
-        (ConnectionTag.DOCKER_CONE_CLIENT_2, [EndpointProvider.STUN]),
-    ])
+    setup_params = _generate_setup_parameters(
+        [
+            (ConnectionTag.DOCKER_UPNP_CLIENT_1, [EndpointProvider.UPNP]),
+            (ConnectionTag.DOCKER_CONE_CLIENT_2, [EndpointProvider.STUN]),
+        ]
+    )
     reflexive_ip = DOCKER_CONE_GW_2_IP
 
     async with AsyncExitStack() as exit_stack:
@@ -398,10 +417,12 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
 @pytest.mark.asyncio
 @pytest.mark.fullcone
 async def test_direct_working_paths_stun_ipv6() -> None:
-    setup_params = _generate_setup_parameters([
-        (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, [EndpointProvider.STUN]),
-        (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, [EndpointProvider.STUN]),
-    ])
+    setup_params = _generate_setup_parameters(
+        [
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, [EndpointProvider.STUN]),
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, [EndpointProvider.STUN]),
+        ]
+    )
     for param in setup_params:
         param.features.ipv6 = True
 
@@ -425,16 +446,18 @@ async def test_direct_working_paths_stun_ipv6() -> None:
 @pytest.mark.asyncio
 @pytest.mark.fullcone
 async def test_direct_working_paths_with_skip_unresponsive_peers() -> None:
-    setup_params = _generate_setup_parameters([
-        (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, [EndpointProvider.STUN]),
-        (ConnectionTag.DOCKER_CONE_CLIENT_1, [EndpointProvider.STUN]),
-        (
-            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
-            [EndpointProvider.STUN],
-        ),
-        (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, [EndpointProvider.STUN]),
-        (ConnectionTag.DOCKER_CONE_CLIENT_2, [EndpointProvider.STUN]),
-    ])
+    setup_params = _generate_setup_parameters(
+        [
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, [EndpointProvider.STUN]),
+            (ConnectionTag.DOCKER_CONE_CLIENT_1, [EndpointProvider.STUN]),
+            (
+                ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+                [EndpointProvider.STUN],
+            ),
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, [EndpointProvider.STUN]),
+            (ConnectionTag.DOCKER_CONE_CLIENT_2, [EndpointProvider.STUN]),
+        ]
+    )
 
     # Force shorter unresponsive peer handshake threshold
     # and adjust wireguard keepalives accordingly too
@@ -464,28 +487,32 @@ async def test_direct_working_paths_with_skip_unresponsive_peers() -> None:
         await delta_client.stop_device()
         await epsilon_client.stop_device()
 
-        await asyncio.gather(*[
-            running_client.log.wait_for(
-                "Skipping sending CMM to peer"
-                f" {stopped_node.public_key} (Unresponsive)"
-            )
-            for running_client, stopped_node in itertools.product(
-                [alpha_client, beta_client, gamma_client], [delta, epsilon]
-            )
-        ])
+        await asyncio.gather(
+            *[
+                running_client.log.wait_for(
+                    "Skipping sending CMM to peer"
+                    f" {stopped_node.public_key} (Unresponsive)"
+                )
+                for running_client, stopped_node in itertools.product(
+                    [alpha_client, beta_client, gamma_client], [delta, epsilon]
+                )
+            ]
+        )
 
         await delta_client.simple_start()
         await epsilon_client.simple_start()
         await delta_client.set_meshnet_config(api.get_meshnet_config(delta.id))
         await epsilon_client.set_meshnet_config(api.get_meshnet_config(epsilon.id))
 
-        await asyncio.gather(*[
-            client.events.wait_for_state_peer(
-                node.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
-            )
-            for client, node in itertools.product(env.clients, env.nodes)
-            if not client.is_node(node)
-        ])
+        await asyncio.gather(
+            *[
+                client.events.wait_for_state_peer(
+                    node.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
+                )
+                for client, node in itertools.product(env.clients, env.nodes)
+                if not client.is_node(node)
+            ]
+        )
 
         await ping_between_all_nodes(env)
 
@@ -497,10 +524,12 @@ async def test_direct_working_paths_with_skip_unresponsive_peers() -> None:
 @pytest.mark.asyncio
 # Regression test for LLT-4306
 async def test_direct_infinite_stun_loop() -> None:
-    setup_params = _generate_setup_parameters([
-        (ConnectionTag.DOCKER_CONE_CLIENT_1, [EndpointProvider.STUN]),
-        (ConnectionTag.DOCKER_CONE_CLIENT_2, [EndpointProvider.STUN]),
-    ])
+    setup_params = _generate_setup_parameters(
+        [
+            (ConnectionTag.DOCKER_CONE_CLIENT_1, [EndpointProvider.STUN]),
+            (ConnectionTag.DOCKER_CONE_CLIENT_2, [EndpointProvider.STUN]),
+        ]
+    )
     async with AsyncExitStack() as exit_stack:
         env = await setup_mesh_nodes(exit_stack, setup_params)
         alpha_client, _ = env.clients
@@ -513,19 +542,21 @@ async def test_direct_infinite_stun_loop() -> None:
 
         # 3478 and 3479 are STUN ports in natlab containers
         tcpdump = await exit_stack.enter_async_context(
-            alpha_connection.create_process([
-                "tcpdump",
-                "--immediate-mode",
-                "-l",
-                "-i",
-                "any",
-                "(",
-                "port",
-                "3478",
-                "or",
-                "3479",
-                ")",
-            ]).run()
+            alpha_connection.create_process(
+                [
+                    "tcpdump",
+                    "--immediate-mode",
+                    "-l",
+                    "-i",
+                    "any",
+                    "(",
+                    "port",
+                    "3478",
+                    "or",
+                    "3479",
+                    ")",
+                ]
+            ).run()
         )
         await asyncio.sleep(5)
 
@@ -542,20 +573,22 @@ async def test_direct_infinite_stun_loop() -> None:
 @pytest.mark.asyncio
 @pytest.mark.fullcone
 async def test_direct_working_paths_with_pausing_upnp_and_stun() -> None:
-    setup_params = _generate_setup_parameters([
-        (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, [EndpointProvider.STUN]),
-        (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, [EndpointProvider.STUN]),
-        (ConnectionTag.DOCKER_CONE_CLIENT_1, [EndpointProvider.STUN]),
-        (ConnectionTag.DOCKER_CONE_CLIENT_2, [EndpointProvider.STUN]),
-        (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, [EndpointProvider.STUN]),
-        (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2, [EndpointProvider.STUN]),
-        (
-            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
-            [EndpointProvider.STUN],
-        ),
-        (ConnectionTag.DOCKER_UPNP_CLIENT_1, [EndpointProvider.UPNP]),
-        (ConnectionTag.DOCKER_UPNP_CLIENT_2, [EndpointProvider.UPNP]),
-    ])
+    setup_params = _generate_setup_parameters(
+        [
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, [EndpointProvider.STUN]),
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, [EndpointProvider.STUN]),
+            (ConnectionTag.DOCKER_CONE_CLIENT_1, [EndpointProvider.STUN]),
+            (ConnectionTag.DOCKER_CONE_CLIENT_2, [EndpointProvider.STUN]),
+            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, [EndpointProvider.STUN]),
+            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2, [EndpointProvider.STUN]),
+            (
+                ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+                [EndpointProvider.STUN],
+            ),
+            (ConnectionTag.DOCKER_UPNP_CLIENT_1, [EndpointProvider.UPNP]),
+            (ConnectionTag.DOCKER_UPNP_CLIENT_2, [EndpointProvider.UPNP]),
+        ]
+    )
 
     async with AsyncExitStack() as exit_stack:
         providers: List[List[EndpointProvider]] = []
@@ -574,33 +607,39 @@ async def test_direct_working_paths_with_pausing_upnp_and_stun() -> None:
 
         await ping_between_all_nodes(env)
 
-        await asyncio.gather(*[
-            (
-                client.log.wait_for(
-                    "Skipping getting endpoint via STUN endpoint"
-                    " provider(ModulePaused)"
+        await asyncio.gather(
+            *[
+                (
+                    client.log.wait_for(
+                        "Skipping getting endpoint via STUN endpoint"
+                        " provider(ModulePaused)"
+                    )
+                    if EndpointProvider.STUN in provider
+                    else client.log.wait_for(
+                        "Skipping getting endpoint via UPNP endpoint"
+                        " provider(ModulePaused)"
+                    )
                 )
-                if EndpointProvider.STUN in provider
-                else client.log.wait_for(
-                    "Skipping getting endpoint via UPNP endpoint"
-                    " provider(ModulePaused)"
-                )
-            )
-            for client, provider in zip(env.clients, providers)
-        ])
+                for client, provider in zip(env.clients, providers)
+            ]
+        )
 
-        tcpdumps = await asyncio.gather(*[
-            exit_stack.enter_async_context(
-                conn.connection.create_process([
-                    "tcpdump",
-                    "--immediate-mode",
-                    "-l",
-                    "-i",
-                    "any",
-                ]).run()
-            )
-            for conn in env.connections
-        ])
+        tcpdumps = await asyncio.gather(
+            *[
+                exit_stack.enter_async_context(
+                    conn.connection.create_process(
+                        [
+                            "tcpdump",
+                            "--immediate-mode",
+                            "-l",
+                            "-i",
+                            "any",
+                        ]
+                    ).run()
+                )
+                for conn in env.connections
+            ]
+        )
         await asyncio.sleep(5)
 
         packets = itertools.chain.from_iterable(
@@ -666,8 +705,7 @@ UHP_FAILING_PATHS = [
         marks=(
             pytest.mark.fullcone
             if any(
-                conn_tag
-                in [
+                conn_tag in [
                     ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
                     ConnectionTag.DOCKER_FULLCONE_CLIENT_2,
                 ]

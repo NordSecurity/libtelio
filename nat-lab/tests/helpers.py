@@ -174,14 +174,20 @@ async def setup_connections(
 
     A list of the Telio connection managers of the connections corresponding to the provided connection tags
     """
-    return await asyncio.gather(*[
-        (
-            exit_stack.enter_async_context(new_connection_manager_by_tag(param, None))
-            if isinstance(param, ConnectionTag)
-            else exit_stack.enter_async_context(new_connection_manager_by_tag(*param))
-        )
-        for param in connection_parameters
-    ])
+    return await asyncio.gather(
+        *[
+            (
+                exit_stack.enter_async_context(
+                    new_connection_manager_by_tag(param, None)
+                )
+                if isinstance(param, ConnectionTag)
+                else exit_stack.enter_async_context(
+                    new_connection_manager_by_tag(*param)
+                )
+            )
+            for param in connection_parameters
+        ]
+    )
 
 
 async def setup_clients(
@@ -213,18 +219,22 @@ async def setup_clients(
     A list of the Telio clients references corresponding to the provided configs
     """
 
-    return await asyncio.gather(*[
-        exit_stack.enter_async_context(
-            Client(
-                connection,
-                node,
-                adapter_type_override,
-                features,
-                fingerprint=fingerprint,
-            ).run(meshnet_config, enable_perf=enable_perf)
-        )
-        for connection, node, adapter_type_override, features, fingerprint, meshnet_config, enable_perf in client_parameters
-    ])
+    return await asyncio.gather(
+        *[
+            exit_stack.enter_async_context(
+                Client(
+                    connection,
+                    node,
+                    adapter_type_override,
+                    features,
+                    fingerprint=fingerprint,
+                ).run(meshnet_config, enable_perf=enable_perf)
+            )
+            for connection, node, adapter_type_override, features, fingerprint, meshnet_config, enable_perf in (
+                client_parameters
+            )
+        ]
+    )
 
 
 @asynccontextmanager
@@ -385,46 +395,52 @@ async def setup_mesh_nodes(
         setup_environment(exit_stack, instances, provided_api, vpn)
     )
 
-    await asyncio.gather(*[
-        client.events.wait_for_state_on_any_derp([RelayState.CONNECTED])
-        for client, instance in zip_longest(env.clients, instances)
-        if instance.derp_servers != []
-    ])
+    await asyncio.gather(
+        *[
+            client.events.wait_for_state_on_any_derp([RelayState.CONNECTED])
+            for client, instance in zip_longest(env.clients, instances)
+            if instance.derp_servers != []
+        ]
+    )
 
-    connection_future = asyncio.gather(*[
-        client.events.wait_for_state_peer(
-            other_node.public_key,
-            [NodeState.CONNECTED],
-            (
-                [PathType.DIRECT]
-                if instance.features.direct and other_instance.features.direct
-                else [PathType.RELAY]
-            ),
-            timeout=90 if is_timeout_expected else None,
-        )
-        for (client, node, instance), (
-            _,
-            other_node,
-            other_instance,
-        ) in product(zip_longest(env.clients, env.nodes, instances), repeat=2)
-        if node != other_node
-        and instance.derp_servers != []
-        and other_instance.derp_servers != []
-    ])
+    connection_future = asyncio.gather(
+        *[
+            client.events.wait_for_state_peer(
+                other_node.public_key,
+                [NodeState.CONNECTED],
+                (
+                    [PathType.DIRECT]
+                    if instance.features.direct and other_instance.features.direct
+                    else [PathType.RELAY]
+                ),
+                timeout=90 if is_timeout_expected else None,
+            )
+            for (client, node, instance), (
+                _,
+                other_node,
+                other_instance,
+            ) in product(zip_longest(env.clients, env.nodes, instances), repeat=2)
+            if node != other_node
+            and instance.derp_servers != []
+            and other_instance.derp_servers != []
+        ]
+    )
 
-    link_state_future = asyncio.gather(*[
-        client.events.wait_for_link_state(
-            other_node.public_key,
-            LinkState.UP,
-            timeout=90 if is_timeout_expected else None,
-        )
-        for (client, node, instance), (
-            _,
-            other_node,
-            _,
-        ) in product(zip_longest(env.clients, env.nodes, instances), repeat=2)
-        if node != other_node and instance.features.link_detection is not None
-    ])
+    link_state_future = asyncio.gather(
+        *[
+            client.events.wait_for_link_state(
+                other_node.public_key,
+                LinkState.UP,
+                timeout=90 if is_timeout_expected else None,
+            )
+            for (client, node, instance), (
+                _,
+                other_node,
+                _,
+            ) in product(zip_longest(env.clients, env.nodes, instances), repeat=2)
+            if node != other_node and instance.features.link_detection is not None
+        ]
+    )
 
     if is_timeout_expected:
         with pytest.raises(asyncio.TimeoutError):
@@ -469,13 +485,15 @@ def connectivity_stack(node1_stack: IPStack, node2_stack: IPStack) -> Optional[I
 
 
 async def ping_between_all_nodes(env: Environment) -> None:
-    await asyncio.gather(*[
-        ping(conn.connection, node.ip_addresses[0])
-        for (client, conn), node in itertools.product(
-            zip(env.clients, env.connections), env.nodes
-        )
-        if not client.is_node(node)
-    ])
+    await asyncio.gather(
+        *[
+            ping(conn.connection, node.ip_addresses[0])
+            for (client, conn), node in itertools.product(
+                zip(env.clients, env.connections), env.nodes
+            )
+            if not client.is_node(node)
+        ]
+    )
 
 
 async def send_https_request(

@@ -157,20 +157,24 @@ async def test_node_state_flickering_direct(
                 SetupParameters(
                     connection_tag=alpha_conn_tag,
                     adapter_type_override=alpha_adapter_type,
-                    features=features_with_endpoint_providers([
-                        EndpointProvider.STUN,
-                        EndpointProvider.LOCAL,
-                        EndpointProvider.UPNP,
-                    ]),
+                    features=features_with_endpoint_providers(
+                        [
+                            EndpointProvider.STUN,
+                            EndpointProvider.LOCAL,
+                            EndpointProvider.UPNP,
+                        ]
+                    ),
                 ),
                 SetupParameters(
                     connection_tag=beta_conn_tag,
                     adapter_type_override=beta_adapter_type,
-                    features=features_with_endpoint_providers([
-                        EndpointProvider.STUN,
-                        EndpointProvider.LOCAL,
-                        EndpointProvider.UPNP,
-                    ]),
+                    features=features_with_endpoint_providers(
+                        [
+                            EndpointProvider.STUN,
+                            EndpointProvider.LOCAL,
+                            EndpointProvider.UPNP,
+                        ]
+                    ),
                 ),
             ],
         )

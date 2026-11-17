@@ -181,13 +181,15 @@ class ConnectionCountLimit(ConnTrackerEventsValidator):
         # Instead of just first one which happens to be in the list.
 
         # Count connections matching our five tuple
-        count = len([
-            event
-            for event in events
-            if event.event_type == EventType.NEW
-            and self.target.partial_eq(event.five_tuple)
-            and not _is_tcp_picked_up_mid_stream(event)
-        ])
+        count = len(
+            [
+                event
+                for event in events
+                if event.event_type == EventType.NEW
+                and self.target.partial_eq(event.five_tuple)
+                and not _is_tcp_picked_up_mid_stream(event)
+            ]
+        )
 
         if self.max_limit is not None and count > self.max_limit:
             return ConnTrackerViolation(

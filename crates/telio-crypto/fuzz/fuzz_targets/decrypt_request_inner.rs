@@ -1,6 +1,5 @@
 #![no_main]
 
-use crypto_box::{aead::Aead, aead::AeadCore};
 use libfuzzer_sys::fuzz_target;
 use once_cell::sync::Lazy;
 use telio_crypto::{chachabox::ChaChaBox, encryption::decrypt_request, PublicKey, SecretKey};

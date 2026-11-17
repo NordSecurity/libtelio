@@ -358,7 +358,7 @@ async def run_default_scenario(
     gamma_ip_stack=IPStack.IPv4,
 ):
     api = API()
-    (alpha, beta, gamma) = api.default_config_three_nodes(
+    alpha, beta, gamma = api.default_config_three_nodes(
         alpha_is_local=alpha_is_local,
         beta_is_local=beta_is_local,
         gamma_is_local=gamma_is_local,
@@ -367,7 +367,7 @@ async def run_default_scenario(
         gamma_ip_stack=gamma_ip_stack,
     )
 
-    (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+    connection_alpha, alpha_conn_tracker = await exit_stack.enter_async_context(
         new_connection_with_conn_tracker(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
             generate_connection_tracker_config(
@@ -377,7 +377,7 @@ async def run_default_scenario(
             ),
         )
     )
-    (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+    connection_beta, beta_conn_tracker = await exit_stack.enter_async_context(
         new_connection_with_conn_tracker(
             ConnectionTag.DOCKER_CONE_CLIENT_2,
             generate_connection_tracker_config(
@@ -387,7 +387,7 @@ async def run_default_scenario(
             ),
         )
     )
-    (connection_gamma, gamma_conn_tracker) = await exit_stack.enter_async_context(
+    connection_gamma, gamma_conn_tracker = await exit_stack.enter_async_context(
         new_connection_with_conn_tracker(
             ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
             generate_connection_tracker_config(
@@ -509,7 +509,7 @@ async def run_default_scenario(
     assert await beta_conn_tracker.find_conntracker_violations() is None
     assert await gamma_conn_tracker.find_conntracker_violations() is None
 
-    (alpha_expected_states, beta_expected_states, gamma_expected_states) = (
+    alpha_expected_states, beta_expected_states, gamma_expected_states = (
         [
             (
                 DERP_BIT
@@ -602,118 +602,124 @@ async def test_lana_with_same_meshnet(
                 ALPHA_FINGERPRINT, meshnet_id=expected_meshnet_id
             )
             .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
-            .add_validator_list([
-                ExternalLinksValidator(exists=False),
-                ConnectivityMatrixValidator(
-                    expected_states=alpha_expected_states,
-                    exists=True,
-                    no_of_connections=3,
-                    all_connections_up=False,
-                ),
-                MembersValidator(
-                    exists=True,
-                    contains=NODES_FINGERPRINTS,
-                ),
-                SentDataValidator(
-                    exists=True,
-                    members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                ReceivedDataValidator(
-                    exists=True,
-                    members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                DerpConnInfoValidator(
-                    exists=True,
-                    servers=DERP_SERVERS_STRS,
-                ),
-                NatTraversalConnInfoValidator(
-                    alpha_pubkey,
-                    beta_pubkey,
-                    False,
-                    does_not_contain=["0:0:0:0:0:0"],
-                    count=1,
-                ),
-            ])
+            .add_validator_list(
+                [
+                    ExternalLinksValidator(exists=False),
+                    ConnectivityMatrixValidator(
+                        expected_states=alpha_expected_states,
+                        exists=True,
+                        no_of_connections=3,
+                        all_connections_up=False,
+                    ),
+                    MembersValidator(
+                        exists=True,
+                        contains=NODES_FINGERPRINTS,
+                    ),
+                    SentDataValidator(
+                        exists=True,
+                        members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    ReceivedDataValidator(
+                        exists=True,
+                        members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    DerpConnInfoValidator(
+                        exists=True,
+                        servers=DERP_SERVERS_STRS,
+                    ),
+                    NatTraversalConnInfoValidator(
+                        alpha_pubkey,
+                        beta_pubkey,
+                        False,
+                        does_not_contain=["0:0:0:0:0:0"],
+                        count=1,
+                    ),
+                ]
+            )
         )
         beta_validator = (
             EventValidator.new_with_basic_validators(
                 BETA_FINGERPRINT, meshnet_id=expected_meshnet_id
             )
             .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
-            .add_validator_list([
-                ExternalLinksValidator(exists=False),
-                ConnectivityMatrixValidator(
-                    expected_states=beta_expected_states,
-                    exists=True,
-                    no_of_connections=3,
-                    all_connections_up=False,
-                ),
-                MembersValidator(
-                    exists=True,
-                    contains=NODES_FINGERPRINTS,
-                ),
-                SentDataValidator(
-                    exists=True,
-                    members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                ReceivedDataValidator(
-                    exists=True,
-                    members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                DerpConnInfoValidator(
-                    exists=True,
-                    servers=DERP_SERVERS_STRS,
-                ),
-                NatTraversalConnInfoValidator(
-                    beta_pubkey,
-                    alpha_pubkey,
-                    False,
-                    does_not_contain=["0:0:0:0:0:0"],
-                    count=1,
-                ),
-            ])
+            .add_validator_list(
+                [
+                    ExternalLinksValidator(exists=False),
+                    ConnectivityMatrixValidator(
+                        expected_states=beta_expected_states,
+                        exists=True,
+                        no_of_connections=3,
+                        all_connections_up=False,
+                    ),
+                    MembersValidator(
+                        exists=True,
+                        contains=NODES_FINGERPRINTS,
+                    ),
+                    SentDataValidator(
+                        exists=True,
+                        members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    ReceivedDataValidator(
+                        exists=True,
+                        members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    DerpConnInfoValidator(
+                        exists=True,
+                        servers=DERP_SERVERS_STRS,
+                    ),
+                    NatTraversalConnInfoValidator(
+                        beta_pubkey,
+                        alpha_pubkey,
+                        False,
+                        does_not_contain=["0:0:0:0:0:0"],
+                        count=1,
+                    ),
+                ]
+            )
         )
         gamma_validator = (
             EventValidator.new_with_basic_validators(
                 GAMMA_FINGERPRINT, meshnet_id=expected_meshnet_id
             )
             .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
-            .add_validator_list([
-                ExternalLinksValidator(exists=False),
-                ConnectivityMatrixValidator(
-                    expected_states=gamma_expected_states,
-                    exists=True,
-                    no_of_connections=3,
-                    all_connections_up=False,
-                ),
-                MembersValidator(
-                    exists=True,
-                    contains=NODES_FINGERPRINTS,
-                ),
-                SentDataValidator(
-                    exists=True,
-                    members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                ReceivedDataValidator(
-                    exists=True,
-                    members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                DerpConnInfoValidator(
-                    exists=True,
-                    servers=DERP_SERVERS_STRS,
-                ),
-                NatTraversalConnInfoValidator(
-                    gamma_pubkey,
-                    "",
-                    True,
-                ),
-            ])
+            .add_validator_list(
+                [
+                    ExternalLinksValidator(exists=False),
+                    ConnectivityMatrixValidator(
+                        expected_states=gamma_expected_states,
+                        exists=True,
+                        no_of_connections=3,
+                        all_connections_up=False,
+                    ),
+                    MembersValidator(
+                        exists=True,
+                        contains=NODES_FINGERPRINTS,
+                    ),
+                    SentDataValidator(
+                        exists=True,
+                        members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    ReceivedDataValidator(
+                        exists=True,
+                        members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    DerpConnInfoValidator(
+                        exists=True,
+                        servers=DERP_SERVERS_STRS,
+                    ),
+                    NatTraversalConnInfoValidator(
+                        gamma_pubkey,
+                        "",
+                        True,
+                    ),
+                ]
+            )
         )
 
         res = alpha_validator.validate(alpha_events[0])
@@ -756,124 +762,130 @@ async def test_lana_with_external_node(
         alpha_validator = (
             EventValidator.new_with_basic_validators(ALPHA_FINGERPRINT)
             .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
-            .add_validator_list([
-                ExternalLinksValidator(
-                    exists=True,
-                    contains=[GAMMA_FINGERPRINT],
-                    does_not_contain=["vpn", alpha_events[0].fp, ALPHA_FINGERPRINT],
-                    all_connections_up=False,
-                    no_of_connections=1,
-                    expected_states=alpha_expected_states,
-                ),
-                ConnectivityMatrixValidator(
-                    expected_states=alpha_expected_states,
-                    exists=True,
-                    no_of_connections=1,
-                    all_connections_up=False,
-                ),
-                MembersValidator(
-                    exists=True,
-                    contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
-                    does_not_contain=[GAMMA_FINGERPRINT],
-                ),
-                SentDataValidator(
-                    exists=True,
-                    members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                ReceivedDataValidator(
-                    exists=True,
-                    members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                DerpConnInfoValidator(
-                    exists=True,
-                    servers=DERP_SERVERS_STRS,
-                ),
-                NatTraversalConnInfoValidator(
-                    alpha_pubkey,
-                    beta_pubkey,
-                    False,
-                    does_not_contain=["0:0:0:0:0:0"],
-                    count=1,
-                ),
-            ])
+            .add_validator_list(
+                [
+                    ExternalLinksValidator(
+                        exists=True,
+                        contains=[GAMMA_FINGERPRINT],
+                        does_not_contain=["vpn", alpha_events[0].fp, ALPHA_FINGERPRINT],
+                        all_connections_up=False,
+                        no_of_connections=1,
+                        expected_states=alpha_expected_states,
+                    ),
+                    ConnectivityMatrixValidator(
+                        expected_states=alpha_expected_states,
+                        exists=True,
+                        no_of_connections=1,
+                        all_connections_up=False,
+                    ),
+                    MembersValidator(
+                        exists=True,
+                        contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                        does_not_contain=[GAMMA_FINGERPRINT],
+                    ),
+                    SentDataValidator(
+                        exists=True,
+                        members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    ReceivedDataValidator(
+                        exists=True,
+                        members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    DerpConnInfoValidator(
+                        exists=True,
+                        servers=DERP_SERVERS_STRS,
+                    ),
+                    NatTraversalConnInfoValidator(
+                        alpha_pubkey,
+                        beta_pubkey,
+                        False,
+                        does_not_contain=["0:0:0:0:0:0"],
+                        count=1,
+                    ),
+                ]
+            )
         )
         beta_validator = (
             EventValidator.new_with_basic_validators(BETA_FINGERPRINT)
             .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
-            .add_validator_list([
-                ExternalLinksValidator(
-                    exists=True,
-                    contains=[GAMMA_FINGERPRINT],
-                    does_not_contain=["vpn", beta_events[0].fp, BETA_FINGERPRINT],
-                    all_connections_up=False,
-                    no_of_connections=1,
-                    expected_states=beta_expected_states,
-                ),
-                ConnectivityMatrixValidator(
-                    expected_states=beta_expected_states,
-                    exists=True,
-                    no_of_connections=1,
-                    all_connections_up=False,
-                ),
-                MembersValidator(
-                    exists=True,
-                    contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
-                    does_not_contain=[GAMMA_FINGERPRINT],
-                ),
-                SentDataValidator(
-                    exists=True,
-                    members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                ReceivedDataValidator(
-                    exists=True,
-                    members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                DerpConnInfoValidator(
-                    exists=True,
-                    servers=DERP_SERVERS_STRS,
-                ),
-                NatTraversalConnInfoValidator(
-                    beta_pubkey,
-                    alpha_pubkey,
-                    False,
-                    does_not_contain=["0:0:0:0:0:0"],
-                    count=1,
-                ),
-            ])
+            .add_validator_list(
+                [
+                    ExternalLinksValidator(
+                        exists=True,
+                        contains=[GAMMA_FINGERPRINT],
+                        does_not_contain=["vpn", beta_events[0].fp, BETA_FINGERPRINT],
+                        all_connections_up=False,
+                        no_of_connections=1,
+                        expected_states=beta_expected_states,
+                    ),
+                    ConnectivityMatrixValidator(
+                        expected_states=beta_expected_states,
+                        exists=True,
+                        no_of_connections=1,
+                        all_connections_up=False,
+                    ),
+                    MembersValidator(
+                        exists=True,
+                        contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                        does_not_contain=[GAMMA_FINGERPRINT],
+                    ),
+                    SentDataValidator(
+                        exists=True,
+                        members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    ReceivedDataValidator(
+                        exists=True,
+                        members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    DerpConnInfoValidator(
+                        exists=True,
+                        servers=DERP_SERVERS_STRS,
+                    ),
+                    NatTraversalConnInfoValidator(
+                        beta_pubkey,
+                        alpha_pubkey,
+                        False,
+                        does_not_contain=["0:0:0:0:0:0"],
+                        count=1,
+                    ),
+                ]
+            )
         )
         gamma_validator = (
             EventValidator.new_with_basic_validators(GAMMA_FINGERPRINT)
             .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
-            .add_validator_list([
-                ExternalLinksValidator(
-                    exists=True,
-                    contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
-                    does_not_contain=["vpn", gamma_events[0].fp, GAMMA_FINGERPRINT],
-                    all_connections_up=False,
-                    no_of_connections=2,
-                    expected_states=gamma_expected_states,
-                ),
-                ConnectivityMatrixValidator(exists=False),
-                SentDataValidator(
-                    exists=True,
-                    members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                ReceivedDataValidator(
-                    exists=True,
-                    members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                DerpConnInfoValidator(
-                    exists=True,
-                    servers=DERP_SERVERS_STRS,
-                ),
-                NatTraversalConnInfoValidator(gamma_pubkey, "", True),
-            ])
+            .add_validator_list(
+                [
+                    ExternalLinksValidator(
+                        exists=True,
+                        contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                        does_not_contain=["vpn", gamma_events[0].fp, GAMMA_FINGERPRINT],
+                        all_connections_up=False,
+                        no_of_connections=2,
+                        expected_states=gamma_expected_states,
+                    ),
+                    ConnectivityMatrixValidator(exists=False),
+                    SentDataValidator(
+                        exists=True,
+                        members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    ReceivedDataValidator(
+                        exists=True,
+                        members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    DerpConnInfoValidator(
+                        exists=True,
+                        servers=DERP_SERVERS_STRS,
+                    ),
+                    NatTraversalConnInfoValidator(gamma_pubkey, "", True),
+                ]
+            )
         )
 
         res = alpha_validator.validate(alpha_events[0])
@@ -920,120 +932,126 @@ async def test_lana_all_external(
         alpha_validator = (
             EventValidator.new_with_basic_validators(ALPHA_FINGERPRINT)
             .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
-            .add_validator_list([
-                ExternalLinksValidator(
-                    exists=True,
-                    contains=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
-                    does_not_contain=["vpn", alpha_events[0].fp, ALPHA_FINGERPRINT],
-                    all_connections_up=False,
-                    no_of_connections=2,
-                    expected_states=alpha_expected_states,
-                ),
-                ConnectivityMatrixValidator(exists=False),
-                MembersValidator(
-                    exists=True,
-                    does_not_contain=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
-                ),
-                SentDataValidator(
-                    exists=True,
-                    members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                ReceivedDataValidator(
-                    exists=True,
-                    members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                DerpConnInfoValidator(
-                    exists=True,
-                    servers=DERP_SERVERS_STRS,
-                ),
-                NatTraversalConnInfoValidator(
-                    alpha_pubkey,
-                    beta_pubkey,
-                    False,
-                    does_not_contain=["0:0:0:0:0:0"],
-                    count=1,
-                ),
-            ])
+            .add_validator_list(
+                [
+                    ExternalLinksValidator(
+                        exists=True,
+                        contains=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
+                        does_not_contain=["vpn", alpha_events[0].fp, ALPHA_FINGERPRINT],
+                        all_connections_up=False,
+                        no_of_connections=2,
+                        expected_states=alpha_expected_states,
+                    ),
+                    ConnectivityMatrixValidator(exists=False),
+                    MembersValidator(
+                        exists=True,
+                        does_not_contain=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
+                    ),
+                    SentDataValidator(
+                        exists=True,
+                        members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    ReceivedDataValidator(
+                        exists=True,
+                        members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    DerpConnInfoValidator(
+                        exists=True,
+                        servers=DERP_SERVERS_STRS,
+                    ),
+                    NatTraversalConnInfoValidator(
+                        alpha_pubkey,
+                        beta_pubkey,
+                        False,
+                        does_not_contain=["0:0:0:0:0:0"],
+                        count=1,
+                    ),
+                ]
+            )
         )
         beta_validator = (
             EventValidator.new_with_basic_validators(BETA_FINGERPRINT)
             .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
-            .add_validator_list([
-                ExternalLinksValidator(
-                    exists=True,
-                    contains=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
-                    does_not_contain=["vpn", beta_events[0].fp, BETA_FINGERPRINT],
-                    all_connections_up=False,
-                    no_of_connections=2,
-                    expected_states=beta_expected_states,
-                ),
-                ConnectivityMatrixValidator(exists=False),
-                MembersValidator(
-                    exists=True,
-                    does_not_contain=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
-                ),
-                SentDataValidator(
-                    exists=True,
-                    members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                ReceivedDataValidator(
-                    exists=True,
-                    members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                DerpConnInfoValidator(
-                    exists=True,
-                    servers=DERP_SERVERS_STRS,
-                ),
-                NatTraversalConnInfoValidator(
-                    beta_pubkey,
-                    alpha_pubkey,
-                    False,
-                    does_not_contain=["0:0:0:0:0:0"],
-                    count=1,
-                ),
-            ])
+            .add_validator_list(
+                [
+                    ExternalLinksValidator(
+                        exists=True,
+                        contains=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
+                        does_not_contain=["vpn", beta_events[0].fp, BETA_FINGERPRINT],
+                        all_connections_up=False,
+                        no_of_connections=2,
+                        expected_states=beta_expected_states,
+                    ),
+                    ConnectivityMatrixValidator(exists=False),
+                    MembersValidator(
+                        exists=True,
+                        does_not_contain=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
+                    ),
+                    SentDataValidator(
+                        exists=True,
+                        members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    ReceivedDataValidator(
+                        exists=True,
+                        members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    DerpConnInfoValidator(
+                        exists=True,
+                        servers=DERP_SERVERS_STRS,
+                    ),
+                    NatTraversalConnInfoValidator(
+                        beta_pubkey,
+                        alpha_pubkey,
+                        False,
+                        does_not_contain=["0:0:0:0:0:0"],
+                        count=1,
+                    ),
+                ]
+            )
         )
         gamma_validator = (
             EventValidator.new_with_basic_validators(GAMMA_FINGERPRINT)
             .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
-            .add_validator_list([
-                ExternalLinksValidator(
-                    exists=True,
-                    contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
-                    does_not_contain=["vpn", gamma_events[0].fp, BETA_FINGERPRINT],
-                    all_connections_up=False,
-                    no_of_connections=2,
-                    expected_states=gamma_expected_states,
-                ),
-                ConnectivityMatrixValidator(exists=False),
-                MembersValidator(
-                    exists=True,
-                    does_not_contain=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
-                ),
-                SentDataValidator(
-                    exists=True,
-                    members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                ReceivedDataValidator(
-                    exists=True,
-                    members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                DerpConnInfoValidator(
-                    exists=True,
-                    servers=DERP_SERVERS_STRS,
-                ),
-                NatTraversalConnInfoValidator(
-                    gamma_pubkey,
-                    "",
-                    True,
-                ),
-            ])
+            .add_validator_list(
+                [
+                    ExternalLinksValidator(
+                        exists=True,
+                        contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                        does_not_contain=["vpn", gamma_events[0].fp, BETA_FINGERPRINT],
+                        all_connections_up=False,
+                        no_of_connections=2,
+                        expected_states=gamma_expected_states,
+                    ),
+                    ConnectivityMatrixValidator(exists=False),
+                    MembersValidator(
+                        exists=True,
+                        does_not_contain=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                    ),
+                    SentDataValidator(
+                        exists=True,
+                        members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    ReceivedDataValidator(
+                        exists=True,
+                        members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    DerpConnInfoValidator(
+                        exists=True,
+                        servers=DERP_SERVERS_STRS,
+                    ),
+                    NatTraversalConnInfoValidator(
+                        gamma_pubkey,
+                        "",
+                        True,
+                    ),
+                ]
+            )
         )
 
         res = alpha_validator.validate(alpha_events[0])
@@ -1089,47 +1107,49 @@ async def test_lana_with_vpn_connection(
                 ALPHA_FINGERPRINT, meshnet_id=expected_meshnet_id
             )
             .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
-            .add_validator_list([
-                ExternalLinksValidator(
-                    exists=True,
-                    contains=["vpn"],
-                    all_connections_up=False,
-                    no_of_connections=1,
-                    no_of_vpn=1,
-                    expected_states=alpha_expected_states,
-                ),
-                ConnectivityMatrixValidator(
-                    exists=True,
-                    no_of_connections=3,
-                    all_connections_up=False,
-                    expected_states=alpha_expected_states,
-                ),
-                MembersValidator(
-                    exists=True,
-                    contains=NODES_FINGERPRINTS,
-                ),
-                SentDataValidator(
-                    exists=True,
-                    members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT, "vpn"],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                ReceivedDataValidator(
-                    exists=True,
-                    members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT, "vpn"],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                DerpConnInfoValidator(
-                    exists=True,
-                    servers=DERP_SERVERS_STRS,
-                ),
-                NatTraversalConnInfoValidator(
-                    alpha_pubkey,
-                    beta_pubkey,
-                    False,
-                    does_not_contain=["0:0:0:0:0:0"],
-                    count=1,
-                ),
-            ])
+            .add_validator_list(
+                [
+                    ExternalLinksValidator(
+                        exists=True,
+                        contains=["vpn"],
+                        all_connections_up=False,
+                        no_of_connections=1,
+                        no_of_vpn=1,
+                        expected_states=alpha_expected_states,
+                    ),
+                    ConnectivityMatrixValidator(
+                        exists=True,
+                        no_of_connections=3,
+                        all_connections_up=False,
+                        expected_states=alpha_expected_states,
+                    ),
+                    MembersValidator(
+                        exists=True,
+                        contains=NODES_FINGERPRINTS,
+                    ),
+                    SentDataValidator(
+                        exists=True,
+                        members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT, "vpn"],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    ReceivedDataValidator(
+                        exists=True,
+                        members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT, "vpn"],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    DerpConnInfoValidator(
+                        exists=True,
+                        servers=DERP_SERVERS_STRS,
+                    ),
+                    NatTraversalConnInfoValidator(
+                        alpha_pubkey,
+                        beta_pubkey,
+                        False,
+                        does_not_contain=["0:0:0:0:0:0"],
+                        count=1,
+                    ),
+                ]
+            )
         )
 
         beta_validator = (
@@ -1137,78 +1157,82 @@ async def test_lana_with_vpn_connection(
                 BETA_FINGERPRINT, meshnet_id=expected_meshnet_id
             )
             .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
-            .add_validator_list([
-                ExternalLinksValidator(exists=False),
-                ConnectivityMatrixValidator(
-                    exists=True,
-                    no_of_connections=3,
-                    all_connections_up=False,
-                    expected_states=beta_expected_states,
-                ),
-                MembersValidator(
-                    exists=True,
-                    contains=NODES_FINGERPRINTS,
-                ),
-                SentDataValidator(
-                    exists=True,
-                    members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                ReceivedDataValidator(
-                    exists=True,
-                    members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                DerpConnInfoValidator(
-                    exists=True,
-                    servers=DERP_SERVERS_STRS,
-                ),
-                NatTraversalConnInfoValidator(
-                    beta_pubkey,
-                    alpha_pubkey,
-                    False,
-                    does_not_contain=["0:0:0:0:0:0"],
-                    count=1,
-                ),
-            ])
+            .add_validator_list(
+                [
+                    ExternalLinksValidator(exists=False),
+                    ConnectivityMatrixValidator(
+                        exists=True,
+                        no_of_connections=3,
+                        all_connections_up=False,
+                        expected_states=beta_expected_states,
+                    ),
+                    MembersValidator(
+                        exists=True,
+                        contains=NODES_FINGERPRINTS,
+                    ),
+                    SentDataValidator(
+                        exists=True,
+                        members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    ReceivedDataValidator(
+                        exists=True,
+                        members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    DerpConnInfoValidator(
+                        exists=True,
+                        servers=DERP_SERVERS_STRS,
+                    ),
+                    NatTraversalConnInfoValidator(
+                        beta_pubkey,
+                        alpha_pubkey,
+                        False,
+                        does_not_contain=["0:0:0:0:0:0"],
+                        count=1,
+                    ),
+                ]
+            )
         )
         gamma_validator = (
             EventValidator.new_with_basic_validators(
                 GAMMA_FINGERPRINT, meshnet_id=expected_meshnet_id
             )
             .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
-            .add_validator_list([
-                ExternalLinksValidator(exists=False),
-                ConnectivityMatrixValidator(
-                    exists=True,
-                    no_of_connections=3,
-                    all_connections_up=False,
-                    expected_states=gamma_expected_states,
-                ),
-                MembersValidator(
-                    exists=True,
-                    contains=NODES_FINGERPRINTS,
-                ),
-                SentDataValidator(
-                    exists=True,
-                    members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                ReceivedDataValidator(
-                    exists=True,
-                    members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                DerpConnInfoValidator(
-                    exists=True,
-                    servers=DERP_SERVERS_STRS,
-                ),
-                NatTraversalConnInfoValidator(
-                    gamma_pubkey,
-                    "",
-                    True,
-                ),
-            ])
+            .add_validator_list(
+                [
+                    ExternalLinksValidator(exists=False),
+                    ConnectivityMatrixValidator(
+                        exists=True,
+                        no_of_connections=3,
+                        all_connections_up=False,
+                        expected_states=gamma_expected_states,
+                    ),
+                    MembersValidator(
+                        exists=True,
+                        contains=NODES_FINGERPRINTS,
+                    ),
+                    SentDataValidator(
+                        exists=True,
+                        members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    ReceivedDataValidator(
+                        exists=True,
+                        members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    DerpConnInfoValidator(
+                        exists=True,
+                        servers=DERP_SERVERS_STRS,
+                    ),
+                    NatTraversalConnInfoValidator(
+                        gamma_pubkey,
+                        "",
+                        True,
+                    ),
+                ]
+            )
         )
 
         res = alpha_validator.validate(alpha_events[0])
@@ -1232,14 +1256,14 @@ async def test_lana_with_meshnet_exit_node(
         )
 
         api = API()
-        (alpha, beta) = api.default_config_two_nodes(
+        alpha, beta = api.default_config_two_nodes(
             True,
             True,
             alpha_ip_stack=alpha_ip_stack,
             beta_ip_stack=beta_ip_stack,
             allow_peer_traffic_routing=True,
         )
-        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+        connection_alpha, alpha_conn_tracker = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 ConnectionTag.DOCKER_CONE_CLIENT_1,
                 generate_connection_tracker_config(
@@ -1249,7 +1273,7 @@ async def test_lana_with_meshnet_exit_node(
             )
         )
 
-        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+        connection_beta, beta_conn_tracker = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
                 generate_connection_tracker_config(
@@ -1332,94 +1356,102 @@ async def test_lana_with_meshnet_exit_node(
         alpha_validator = (
             EventValidator.new_with_basic_validators(ALPHA_FINGERPRINT)
             .add_rtt_validators([alpha_ip_stack, beta_ip_stack, None])
-            .add_validator_list([
-                ExternalLinksValidator(exists=False),
-                ConnectivityMatrixValidator(
-                    exists=True,
-                    no_of_connections=1,
-                    all_connections_up=False,
-                    expected_states=[(
-                        DERP_BIT
-                        | WG_BIT
-                        | ip_stack_to_bits(
-                            testing.unpack_optional(
-                                choose_peer_stack(alpha_ip_stack, beta_ip_stack)
+            .add_validator_list(
+                [
+                    ExternalLinksValidator(exists=False),
+                    ConnectivityMatrixValidator(
+                        exists=True,
+                        no_of_connections=1,
+                        all_connections_up=False,
+                        expected_states=[
+                            (
+                                DERP_BIT
+                                | WG_BIT
+                                | ip_stack_to_bits(
+                                    testing.unpack_optional(
+                                        choose_peer_stack(alpha_ip_stack, beta_ip_stack)
+                                    )
+                                )
                             )
-                        )
-                    )],
-                ),
-                MembersValidator(
-                    exists=True,
-                    contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
-                ),
-                SentDataValidator(
-                    exists=True,
-                    members=[BETA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                ReceivedDataValidator(
-                    exists=True,
-                    members=[BETA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                DerpConnInfoValidator(
-                    exists=True,
-                    servers=DERP_SERVERS_STRS,
-                ),
-                NatTraversalConnInfoValidator(
-                    alpha.public_key,
-                    beta.public_key,
-                    False,
-                    does_not_contain=["0:0:0:0:0:0"],
-                    count=1,
-                ),
-            ])
+                        ],
+                    ),
+                    MembersValidator(
+                        exists=True,
+                        contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                    ),
+                    SentDataValidator(
+                        exists=True,
+                        members=[BETA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    ReceivedDataValidator(
+                        exists=True,
+                        members=[BETA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    DerpConnInfoValidator(
+                        exists=True,
+                        servers=DERP_SERVERS_STRS,
+                    ),
+                    NatTraversalConnInfoValidator(
+                        alpha.public_key,
+                        beta.public_key,
+                        False,
+                        does_not_contain=["0:0:0:0:0:0"],
+                        count=1,
+                    ),
+                ]
+            )
         )
         beta_validator = (
             EventValidator.new_with_basic_validators(BETA_FINGERPRINT)
             .add_rtt_validators([alpha_ip_stack, beta_ip_stack, None])
-            .add_validator_list([
-                ExternalLinksValidator(exists=False),
-                ConnectivityMatrixValidator(
-                    exists=True,
-                    no_of_connections=1,
-                    all_connections_up=False,
-                    expected_states=[(
-                        DERP_BIT
-                        | WG_BIT
-                        | ip_stack_to_bits(
-                            testing.unpack_optional(
-                                choose_peer_stack(beta_ip_stack, alpha_ip_stack)
+            .add_validator_list(
+                [
+                    ExternalLinksValidator(exists=False),
+                    ConnectivityMatrixValidator(
+                        exists=True,
+                        no_of_connections=1,
+                        all_connections_up=False,
+                        expected_states=[
+                            (
+                                DERP_BIT
+                                | WG_BIT
+                                | ip_stack_to_bits(
+                                    testing.unpack_optional(
+                                        choose_peer_stack(beta_ip_stack, alpha_ip_stack)
+                                    )
+                                )
                             )
-                        )
-                    )],
-                ),
-                MembersValidator(
-                    exists=True,
-                    contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
-                ),
-                SentDataValidator(
-                    exists=True,
-                    members=[ALPHA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                ReceivedDataValidator(
-                    exists=True,
-                    members=[ALPHA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                DerpConnInfoValidator(
-                    exists=True,
-                    servers=DERP_SERVERS_STRS,
-                ),
-                NatTraversalConnInfoValidator(
-                    beta.public_key,
-                    alpha.public_key,
-                    False,
-                    does_not_contain=["0:0:0:0:0:0"],
-                    count=1,
-                ),
-            ])
+                        ],
+                    ),
+                    MembersValidator(
+                        exists=True,
+                        contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                    ),
+                    SentDataValidator(
+                        exists=True,
+                        members=[ALPHA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    ReceivedDataValidator(
+                        exists=True,
+                        members=[ALPHA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    DerpConnInfoValidator(
+                        exists=True,
+                        servers=DERP_SERVERS_STRS,
+                    ),
+                    NatTraversalConnInfoValidator(
+                        beta.public_key,
+                        alpha.public_key,
+                        False,
+                        does_not_contain=["0:0:0:0:0:0"],
+                        count=1,
+                    ),
+                ]
+            )
         )
 
         res = alpha_validator.validate(alpha_events[0])
@@ -1442,10 +1474,10 @@ async def test_lana_with_disconnected_node(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
-        (alpha, beta) = api.default_config_two_nodes(
+        alpha, beta = api.default_config_two_nodes(
             True, True, alpha_ip_stack=alpha_ip_stack, beta_ip_stack=beta_ip_stack
         )
-        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+        connection_alpha, alpha_conn_tracker = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 ConnectionTag.DOCKER_CONE_CLIENT_1,
                 generate_connection_tracker_config(
@@ -1456,7 +1488,7 @@ async def test_lana_with_disconnected_node(
                 ),
             )
         )
-        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+        connection_beta, beta_conn_tracker = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 ConnectionTag.DOCKER_CONE_CLIENT_2,
                 generate_connection_tracker_config(
@@ -1559,95 +1591,103 @@ async def test_lana_with_disconnected_node(
         alpha_validator = (
             EventValidator.new_with_basic_validators(ALPHA_FINGERPRINT)
             .add_rtt_validators([alpha_ip_stack, beta_ip_stack, None])
-            .add_validator_list([
-                ExternalLinksValidator(exists=False),
-                ConnectivityMatrixValidator(
-                    exists=True,
-                    no_of_connections=1,
-                    all_connections_up=False,
-                    expected_states=[(
-                        DERP_BIT
-                        | WG_BIT
-                        | ip_stack_to_bits(
-                            testing.unpack_optional(
-                                choose_peer_stack(alpha_ip_stack, beta_ip_stack)
+            .add_validator_list(
+                [
+                    ExternalLinksValidator(exists=False),
+                    ConnectivityMatrixValidator(
+                        exists=True,
+                        no_of_connections=1,
+                        all_connections_up=False,
+                        expected_states=[
+                            (
+                                DERP_BIT
+                                | WG_BIT
+                                | ip_stack_to_bits(
+                                    testing.unpack_optional(
+                                        choose_peer_stack(alpha_ip_stack, beta_ip_stack)
+                                    )
+                                )
                             )
-                        )
-                    )],
-                ),
-                MembersValidator(
-                    exists=True,
-                    contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
-                ),
-                SentDataValidator(
-                    exists=True,
-                    members=[BETA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                ReceivedDataValidator(
-                    exists=True,
-                    members=[BETA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                DerpConnInfoValidator(
-                    exists=True,
-                    servers=DERP_SERVERS_STRS,
-                ),
-                NatTraversalConnInfoValidator(
-                    alpha.public_key,
-                    beta.public_key,
-                    False,
-                    does_not_contain=["0:0:0:0:0:0"],
-                    count=1,
-                ),
-            ])
+                        ],
+                    ),
+                    MembersValidator(
+                        exists=True,
+                        contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                    ),
+                    SentDataValidator(
+                        exists=True,
+                        members=[BETA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    ReceivedDataValidator(
+                        exists=True,
+                        members=[BETA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    DerpConnInfoValidator(
+                        exists=True,
+                        servers=DERP_SERVERS_STRS,
+                    ),
+                    NatTraversalConnInfoValidator(
+                        alpha.public_key,
+                        beta.public_key,
+                        False,
+                        does_not_contain=["0:0:0:0:0:0"],
+                        count=1,
+                    ),
+                ]
+            )
         )
 
         beta_validator = (
             EventValidator.new_with_basic_validators(BETA_FINGERPRINT)
             .add_rtt_validators([alpha_ip_stack, beta_ip_stack, None])
-            .add_validator_list([
-                ExternalLinksValidator(exists=False),
-                ConnectivityMatrixValidator(
-                    exists=True,
-                    no_of_connections=1,
-                    all_connections_up=False,
-                    expected_states=[(
-                        DERP_BIT
-                        | WG_BIT
-                        | ip_stack_to_bits(
-                            testing.unpack_optional(
-                                choose_peer_stack(beta_ip_stack, alpha_ip_stack)
+            .add_validator_list(
+                [
+                    ExternalLinksValidator(exists=False),
+                    ConnectivityMatrixValidator(
+                        exists=True,
+                        no_of_connections=1,
+                        all_connections_up=False,
+                        expected_states=[
+                            (
+                                DERP_BIT
+                                | WG_BIT
+                                | ip_stack_to_bits(
+                                    testing.unpack_optional(
+                                        choose_peer_stack(beta_ip_stack, alpha_ip_stack)
+                                    )
+                                )
                             )
-                        )
-                    )],
-                ),
-                MembersValidator(
-                    exists=True,
-                    contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
-                ),
-                SentDataValidator(
-                    exists=True,
-                    members=[ALPHA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                ReceivedDataValidator(
-                    exists=True,
-                    members=[ALPHA_FINGERPRINT],
-                    does_not_contain=["0:0:0:0:0"],
-                ),
-                DerpConnInfoValidator(
-                    exists=True,
-                    servers=DERP_SERVERS_STRS,
-                ),
-                NatTraversalConnInfoValidator(
-                    beta.public_key,
-                    alpha.public_key,
-                    False,
-                    does_not_contain=["0:0:0:0:0:0"],
-                    count=1,
-                ),
-            ])
+                        ],
+                    ),
+                    MembersValidator(
+                        exists=True,
+                        contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                    ),
+                    SentDataValidator(
+                        exists=True,
+                        members=[ALPHA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    ReceivedDataValidator(
+                        exists=True,
+                        members=[ALPHA_FINGERPRINT],
+                        does_not_contain=["0:0:0:0:0"],
+                    ),
+                    DerpConnInfoValidator(
+                        exists=True,
+                        servers=DERP_SERVERS_STRS,
+                    ),
+                    NatTraversalConnInfoValidator(
+                        beta.public_key,
+                        alpha.public_key,
+                        False,
+                        does_not_contain=["0:0:0:0:0:0"],
+                        count=1,
+                    ),
+                ]
+            )
         )
 
         res = alpha_validator.validate(alpha_events[0])
@@ -1658,33 +1698,35 @@ async def test_lana_with_disconnected_node(
         # Connectivity matrix is not persistent, will be missing when peer is offline
         alpha_validator = EventValidator.new_with_basic_validators(
             ALPHA_FINGERPRINT
-        ).add_validator_list([
-            ExternalLinksValidator(exists=False),
-            ConnectivityMatrixValidator(exists=False),
-            MembersValidator(
-                exists=True,
-                contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
-            ),
-            SentDataValidator(
-                exists=True,
-                members=[BETA_FINGERPRINT],
-                does_not_contain=["0:0:0:0:0"],
-            ),
-            ReceivedDataValidator(
-                exists=True,
-                members=[BETA_FINGERPRINT],
-            ),
-            DerpConnInfoValidator(
-                exists=False,
-            ),
-            NatTraversalConnInfoValidator(
-                alpha.public_key,
-                beta.public_key,
-                False,
-                does_not_contain=["0:0:0:0:0:0"],
-                count=1,
-            ),
-        ])
+        ).add_validator_list(
+            [
+                ExternalLinksValidator(exists=False),
+                ConnectivityMatrixValidator(exists=False),
+                MembersValidator(
+                    exists=True,
+                    contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                ),
+                SentDataValidator(
+                    exists=True,
+                    members=[BETA_FINGERPRINT],
+                    does_not_contain=["0:0:0:0:0"],
+                ),
+                ReceivedDataValidator(
+                    exists=True,
+                    members=[BETA_FINGERPRINT],
+                ),
+                DerpConnInfoValidator(
+                    exists=False,
+                ),
+                NatTraversalConnInfoValidator(
+                    alpha.public_key,
+                    beta.public_key,
+                    False,
+                    does_not_contain=["0:0:0:0:0:0"],
+                    count=1,
+                ),
+            ]
+        )
 
         (
             rtt_c,
@@ -1731,89 +1773,95 @@ async def test_lana_with_disconnected_node(
                 rtt6_loss_c = ["100:100:100:100:100"]
                 rtt6_loss_dnc = ["null:null:null:null:null", "0:0:0:0:0"]
 
-        alpha_validator.add_validator_list([
-            RttValidator(
-                exists=True,
-                members=[BETA_FINGERPRINT],
-                does_not_contain=rtt_dnc,
-                contains=rtt_c,
-                equals=rtt_eq,
-            ),
-            RttLossValidator(
-                exists=True,
-                members=[BETA_FINGERPRINT],
-                does_not_contain=rtt_loss_dnc,
-                contains=rtt_loss_c,
-                equals=rtt_loss_eq,
-            ),
-            Rtt6Validator(
-                exists=True,
-                members=[BETA_FINGERPRINT],
-                does_not_contain=rtt6_dnc,
-                contains=rtt6_c,
-                equals=rtt6_eq,
-            ),
-            Rtt6LossValidator(
-                exists=True,
-                members=[BETA_FINGERPRINT],
-                does_not_contain=rtt6_loss_dnc,
-                contains=rtt6_loss_c,
-                equals=rtt6_loss_eq,
-            ),
-        ])
+        alpha_validator.add_validator_list(
+            [
+                RttValidator(
+                    exists=True,
+                    members=[BETA_FINGERPRINT],
+                    does_not_contain=rtt_dnc,
+                    contains=rtt_c,
+                    equals=rtt_eq,
+                ),
+                RttLossValidator(
+                    exists=True,
+                    members=[BETA_FINGERPRINT],
+                    does_not_contain=rtt_loss_dnc,
+                    contains=rtt_loss_c,
+                    equals=rtt_loss_eq,
+                ),
+                Rtt6Validator(
+                    exists=True,
+                    members=[BETA_FINGERPRINT],
+                    does_not_contain=rtt6_dnc,
+                    contains=rtt6_c,
+                    equals=rtt6_eq,
+                ),
+                Rtt6LossValidator(
+                    exists=True,
+                    members=[BETA_FINGERPRINT],
+                    does_not_contain=rtt6_loss_dnc,
+                    contains=rtt6_loss_c,
+                    equals=rtt6_loss_eq,
+                ),
+            ]
+        )
 
         res = alpha_validator.validate(alpha_events[1])
         assert res[0], res[1]
 
-        beta_validator = EventValidator(BETA_FINGERPRINT).add_validator_list([
-            NameValidator("disconnect"),
-            CategoryValidator("service_quality"),
-            FingerprintValidator(exists=True),
-            ExternalLinksValidator(exists=False),
-            ConnectivityMatrixValidator(
-                exists=True,
-                no_of_connections=1,
-                all_connections_up=False,
-                expected_states=[(
-                    DERP_BIT
-                    | WG_BIT
-                    | ip_stack_to_bits(
-                        testing.unpack_optional(
-                            choose_peer_stack(beta_ip_stack, alpha_ip_stack)
+        beta_validator = EventValidator(BETA_FINGERPRINT).add_validator_list(
+            [
+                NameValidator("disconnect"),
+                CategoryValidator("service_quality"),
+                FingerprintValidator(exists=True),
+                ExternalLinksValidator(exists=False),
+                ConnectivityMatrixValidator(
+                    exists=True,
+                    no_of_connections=1,
+                    all_connections_up=False,
+                    expected_states=[
+                        (
+                            DERP_BIT
+                            | WG_BIT
+                            | ip_stack_to_bits(
+                                testing.unpack_optional(
+                                    choose_peer_stack(beta_ip_stack, alpha_ip_stack)
+                                )
+                            )
                         )
-                    )
-                )],
-            ),
-            MembersValidator(
-                exists=True,
-                contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
-            ),
-            SentDataValidator(exists=False),
-            ReceivedDataValidator(exists=False),
-            DerpConnInfoValidator(
-                exists=True,
-                servers=DERP_SERVERS_STRS,
-            ),
-            NatTraversalConnInfoValidator(
-                beta.public_key,
-                alpha.public_key,
-                False,
-                does_not_contain=["0:0:0:0:0:0"],
-                count=1,
-            ),
-            RttValidator(
-                exists=False,
-            ),
-            RttLossValidator(
-                exists=False,
-            ),
-            Rtt6Validator(
-                exists=False,
-            ),
-            Rtt6LossValidator(
-                exists=False,
-            ),
-        ])
+                    ],
+                ),
+                MembersValidator(
+                    exists=True,
+                    contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                ),
+                SentDataValidator(exists=False),
+                ReceivedDataValidator(exists=False),
+                DerpConnInfoValidator(
+                    exists=True,
+                    servers=DERP_SERVERS_STRS,
+                ),
+                NatTraversalConnInfoValidator(
+                    beta.public_key,
+                    alpha.public_key,
+                    False,
+                    does_not_contain=["0:0:0:0:0:0"],
+                    count=1,
+                ),
+                RttValidator(
+                    exists=False,
+                ),
+                RttLossValidator(
+                    exists=False,
+                ),
+                Rtt6Validator(
+                    exists=False,
+                ),
+                Rtt6LossValidator(
+                    exists=False,
+                ),
+            ]
+        )
 
         res = alpha_validator.validate(alpha_events[1])
         assert res[0], res[1]
@@ -1840,7 +1888,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
     async with AsyncExitStack() as exit_stack:
         api = API()
         beta = api.default_config_one_node(True, ip_stack=beta_ip_stack)
-        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+        connection_beta, beta_conn_tracker = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 ConnectionTag.DOCKER_CONE_CLIENT_2,
                 generate_connection_tracker_config(
@@ -1867,7 +1915,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
         assert beta_events
 
         alpha = api.default_config_one_node(True, ip_stack=alpha_ip_stack)
-        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+        connection_alpha, alpha_conn_tracker = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 ConnectionTag.DOCKER_CONE_CLIENT_1,
                 generate_connection_tracker_config(
@@ -2130,7 +2178,7 @@ async def test_lana_rtt_interval_controls_periodic_qos_collection():
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        (alpha, beta) = api.default_config_two_nodes(
+        alpha, beta = api.default_config_two_nodes(
             True, True, alpha_ip_stack=IPStack.IPv4v6, beta_ip_stack=IPStack.IPv4v6
         )
 

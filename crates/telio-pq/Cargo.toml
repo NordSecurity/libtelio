@@ -16,7 +16,7 @@ fuzzing = []
 # and fixes KyberSlash; the FIPS-203 ml-kem crates are NOT wire-compatible.
 safe_pqc_kyber = { version = "0.6.3", features = ["std", "zeroize"] }
 hmac = { version = "0.13.0", default-features = false }
-blake2 = { default-features = false, version = "0.10.6" }
+blake2 = { default-features = false, version = "0.11.0" }
 blake3 = { workspace = true, default-features = false }
 
 telio-crypto.workspace = true

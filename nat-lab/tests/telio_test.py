@@ -41,11 +41,13 @@ class TestRuntime:
             runtime.get_output_notifier().notify_output(what, event)
             await event.wait()
 
-        async with run_async_contexts([
-            wait_output("started telio"),
-            wait_output("started"),
-            wait_output("natlab injected"),
-        ]) as future_list:
+        async with run_async_contexts(
+            [
+                wait_output("started telio"),
+                wait_output("started"),
+                wait_output("natlab injected"),
+            ]
+        ) as future_list:
             await asyncio.sleep(0)
 
             assert await runtime.handle_output_line("- started telio...")
@@ -379,26 +381,28 @@ class TestEvents:
         runtime.allowed_pub_keys = set(["AAA", "BBB"])
 
         # Start waiting for new event before it is being generated
-        async with run_async_contexts([
-            events.wait_for_event_peer(
-                "AAA", [NodeState.DISCONNECTED], [PathType.RELAY], timeout=5
-            ),
-            events.wait_for_event_peer(
-                "AAA", [NodeState.CONNECTING], [PathType.RELAY], timeout=5
-            ),
-            events.wait_for_event_peer(
-                "AAA", [NodeState.CONNECTED], [PathType.RELAY], timeout=5
-            ),
-            events.wait_for_event_peer(
-                "BBB", [NodeState.DISCONNECTED], [PathType.DIRECT], timeout=5
-            ),
-            events.wait_for_event_peer(
-                "BBB", [NodeState.CONNECTING], [PathType.DIRECT], timeout=5
-            ),
-            events.wait_for_event_peer(
-                "BBB", [NodeState.CONNECTED], [PathType.DIRECT], timeout=5
-            ),
-        ]) as futures:
+        async with run_async_contexts(
+            [
+                events.wait_for_event_peer(
+                    "AAA", [NodeState.DISCONNECTED], [PathType.RELAY], timeout=5
+                ),
+                events.wait_for_event_peer(
+                    "AAA", [NodeState.CONNECTING], [PathType.RELAY], timeout=5
+                ),
+                events.wait_for_event_peer(
+                    "AAA", [NodeState.CONNECTED], [PathType.RELAY], timeout=5
+                ),
+                events.wait_for_event_peer(
+                    "BBB", [NodeState.DISCONNECTED], [PathType.DIRECT], timeout=5
+                ),
+                events.wait_for_event_peer(
+                    "BBB", [NodeState.CONNECTING], [PathType.DIRECT], timeout=5
+                ),
+                events.wait_for_event_peer(
+                    "BBB", [NodeState.CONNECTED], [PathType.DIRECT], timeout=5
+                ),
+            ]
+        ) as futures:
             # wait for futures to be started
             await asyncio.sleep(0)
 
@@ -597,15 +601,17 @@ class TestEvents:
         events = Events(runtime)
         test_derp_server = create_derpserver_config(RelayState.CONNECTED)
         # Start waiting for new event before it is being generated
-        async with run_async_contexts([
-            events.wait_for_event_derp("1.1.1.1", [RelayState.DISCONNECTED], 5),
-            events.wait_for_event_derp("1.1.1.1", [RelayState.CONNECTING], 5),
-            events.wait_for_event_derp("1.1.1.1", [RelayState.CONNECTED], 5),
-            events.wait_for_event_derp("1.1.1.2", [RelayState.DISCONNECTED], 5),
-            events.wait_for_event_derp("1.1.1.2", [RelayState.CONNECTING], 5),
-            events.wait_for_event_derp("1.1.1.2", [RelayState.CONNECTED], 5),
-            events.wait_for_event_derp("1.1.1.3", [RelayState.DISCONNECTED], 5),
-        ]) as futures:
+        async with run_async_contexts(
+            [
+                events.wait_for_event_derp("1.1.1.1", [RelayState.DISCONNECTED], 5),
+                events.wait_for_event_derp("1.1.1.1", [RelayState.CONNECTING], 5),
+                events.wait_for_event_derp("1.1.1.1", [RelayState.CONNECTED], 5),
+                events.wait_for_event_derp("1.1.1.2", [RelayState.DISCONNECTED], 5),
+                events.wait_for_event_derp("1.1.1.2", [RelayState.CONNECTING], 5),
+                events.wait_for_event_derp("1.1.1.2", [RelayState.CONNECTED], 5),
+                events.wait_for_event_derp("1.1.1.3", [RelayState.DISCONNECTED], 5),
+            ]
+        ) as futures:
             # wait for futures to be started
             await asyncio.sleep(0)
 

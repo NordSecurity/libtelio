@@ -7,14 +7,14 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-aead = { version = "0.5.2", default-features = false }
+aead = { version = "0.6.1", default-features = false, features = ["alloc"] }
 serde_with = { features = [
   "macros",
 ], default-features = false, version = "3.20.0" }
-chacha20poly1305 = { default-features = false, version = "0.10.1" }
-chacha20 = { default-features = false, version = "0.9" }
+chacha20poly1305 = { default-features = false, version = "0.11.0" }
+chacha20 = { default-features = false, features = ["xchacha"], version = "0.10" }
 zeroize = { workspace = true, default-features = false }
-curve25519-dalek = { default-features = false, version = "4.1.3" }
+curve25519-dalek = { default-features = false, features = ["zeroize"], version = "5.0.0" }
 
 base64.workspace = true
 crypto_box.workspace = true
