@@ -223,6 +223,16 @@ impl NordVpnLiteConfig {
                 _ => Path::new("."),
             };
 
+            if !dir.exists() {
+                std::fs::create_dir_all(dir).map_err(|e| {
+                    NordVpnLiteError::InvalidConfigOption {
+                        key: key.to_owned(),
+                        msg: format!("could not create log file parent directories: {e}"),
+                        value: path.to_string_lossy().into_owned(),
+                    }
+                })?;
+            }
+
             let path_canonical =
                 dir.canonicalize()
                     .map_err(|e| NordVpnLiteError::InvalidConfigOption {
@@ -233,12 +243,14 @@ impl NordVpnLiteConfig {
             path_canonical.join(file_name)
         } else {
             if let Some(parent) = path.parent() {
-                if !parent.is_dir() {
-                    return Err(NordVpnLiteError::InvalidConfigOption {
-                        key: key.to_owned(),
-                        msg: "parent directory does not exist".to_owned(),
-                        value: path.to_string_lossy().into_owned(),
-                    });
+                if !parent.exists() {
+                    std::fs::create_dir_all(parent).map_err(|e| {
+                        NordVpnLiteError::InvalidConfigOption {
+                            key: key.to_owned(),
+                            msg: format!("could not create log file parent directories: {e}"),
+                            value: path.to_string_lossy().into_owned(),
+                        }
+                    })?;
                 }
             }
             path
@@ -878,31 +890,6 @@ mod tests {
         assert_matches::assert_matches!(
             NordVpnLiteConfig::from_existing_file(&path),
             Err(NordVpnLiteError::Io(ref e)) if e.kind() == std::io::ErrorKind::NotFound
-        );
-    }
-
-    #[test]
-    fn test_resolve_relative_path_missing_parent() {
-        let config = config_json("does_not_exist_dir/relative.log", "./auth.json");
-        let file = temp_config(&config);
-        let err = NordVpnLiteConfig::from_file(file.path().to_str().unwrap()).unwrap_err();
-
-        assert_matches::assert_matches!(
-            err,
-            NordVpnLiteError::InvalidConfigOption { ref key, .. } if key == "log_file_path"
-        );
-    }
-
-    #[test]
-    fn test_resolve_absolute_path_missing_parent() {
-        let config = config_json("/nonexistent_dir_for_test/absolute.log", "./auth.json");
-        let file = temp_config(&config);
-        let err = NordVpnLiteConfig::from_file(file.path().to_str().unwrap()).unwrap_err();
-
-        assert_matches::assert_matches!(
-            err,
-            NordVpnLiteError::InvalidConfigOption { ref key, ref msg, .. }
-                if key == "log_file_path" && msg == "parent directory does not exist"
         );
     }
 
