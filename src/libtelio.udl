@@ -207,6 +207,9 @@ namespace telio {
     /// Get current commit sha.
     string get_commit_sha();
 
+    /// Utility function to get the number of bytes currently allocated on the Rust heap by libtelio.
+    u64 get_memory_usage();
+
     /// Generate a new secret key.
     SecretKey generate_secret_key();
 

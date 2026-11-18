@@ -16,6 +16,11 @@ use telio_core::connection_config::{
 use telio_core::defaults_builder::FeaturesDefaultsBuilder;
 pub use telio_core::types as ffi_types;
 use telio_model::cipher::Cipher;
+use telio_utils::memtrack::TrackingAllocator;
+
+// Counts Rust heap allocations made by libtelio
+#[global_allocator]
+static ALLOC: TrackingAllocator = TrackingAllocator::new();
 
 pub use uniffi_libtelio::*;
 #[allow(

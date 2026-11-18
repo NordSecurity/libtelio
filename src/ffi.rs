@@ -123,6 +123,11 @@ pub fn get_commit_sha() -> String {
     commit_sha().to_owned()
 }
 
+/// Get number of bytes currently allocated on the Rust heap by libtelio.
+pub fn get_memory_usage() -> u64 {
+    crate::ALLOC.allocated()
+}
+
 /// Generate a new secret key.
 pub fn generate_secret_key() -> SecretKey {
     SecretKey::gen()
