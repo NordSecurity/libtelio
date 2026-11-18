@@ -1141,3 +1141,101 @@ async def test_openwrt_dhcp_client_mtu_derived_from_wan(
                 gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
             )
         await wait_for_log_line(logread_proc)
+
+
+async def uci_get(connection: Connection, option: str, state: bool = False) -> str:
+    """Return the value of a UCI option, empty string when unset. `state` applies /var/state."""
+    cmd = ["uci", "-q", *(["-P", "/var/state"] if state else []), "get", option]
+    try:
+        return (await connection.create_process(cmd).execute()).get_stdout().strip()
+    except ProcessExecError:
+        return ""
+
+
+async def dhcp_config_checksum(connection: Connection) -> str:
+    proc = await connection.create_process(["md5sum", "/etc/config/dhcp"]).execute()
+    return proc.get_stdout().split()[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.openwrt
+@pytest.mark.parametrize("client_tag,gw_tag", OPENWRT_TAGS)
+async def test_openwrt_dnsmasq_changes_not_committed(
+    client_tag: ConnectionTag,
+    gw_tag: ConnectionTag,
+) -> None:
+    """
+    dnsmasq changes must live only in the UCI state (/var/state), never in /etc/config/dhcp
+
+    Steps:
+        1. Add an extra dnsmasq server to /var/state, like a killed daemon leaves behind
+        2. Connect to vpn
+        3. /etc/config/dhcp is untouched, the UCI state holds only the VPN DNS and the MTU option
+        4. Disconnect
+        5. The UCI state matches the saved config again
+    """
+    async with AsyncExitStack() as exit_stack:
+        client_connection, gateway_connection, nordvpnlite = (
+            await setup_openwrt_test_environment(
+                ConfigPresetName.VPN_OPENWRT_UCI_PL,
+                exit_stack,
+                client_tag=client_tag,
+                gw_tag=gw_tag,
+            )
+        )
+        vpn_dns = CONFIG_PRESETS[ConfigPresetName.VPN_OPENWRT_UCI_PL].dns
+        dhcp_checksum = await dhcp_config_checksum(gateway_connection)
+        saved_servers = await uci_get(gateway_connection, "dhcp.@dnsmasq[0].server")
+        saved_dhcp_options = await uci_get(gateway_connection, "dhcp.lan.dhcp_option")
+
+        async def revert_dhcp_state() -> None:
+            await gateway_connection.create_process(
+                ["uci", "-P", "/var/state", "revert", "dhcp"]
+            ).execute()
+
+        exit_stack.push_async_callback(revert_dhcp_state)
+        await gateway_connection.create_process(
+            [
+                "uci",
+                "-P",
+                "/var/state",
+                "add_list",
+                "dhcp.@dnsmasq[0].server=10.0.80.99",
+            ]
+        ).execute()
+
+        async with nordvpnlite.start():
+            await nordvpnlite.wait_for_vpn_connected_state()
+            await check_gateway_and_client_ip(
+                gateway_connection, client_connection, WG_SERVER["ipv4"], gw_tag
+            )
+
+            assert await dhcp_config_checksum(gateway_connection) == dhcp_checksum
+            assert (
+                await uci_get(gateway_connection, "dhcp.@dnsmasq[0].server")
+                == saved_servers
+            )
+            state_servers = await uci_get(
+                gateway_connection, "dhcp.@dnsmasq[0].server", state=True
+            )
+            assert state_servers.split() == vpn_dns
+            state_dhcp_options = await uci_get(
+                gateway_connection, "dhcp.lan.dhcp_option", state=True
+            )
+            assert "option:mtu,1420" in state_dhcp_options.split()
+
+            logread_proc = await start_logread_process(
+                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
+            )
+        await wait_for_log_line(logread_proc)
+        log.info("Network has been reloaded")
+
+        assert await dhcp_config_checksum(gateway_connection) == dhcp_checksum
+        assert (
+            await uci_get(gateway_connection, "dhcp.@dnsmasq[0].server", state=True)
+            == saved_servers
+        )
+        assert (
+            await uci_get(gateway_connection, "dhcp.lan.dhcp_option", state=True)
+            == saved_dhcp_options
+        )
