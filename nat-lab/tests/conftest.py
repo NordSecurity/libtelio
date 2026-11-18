@@ -13,6 +13,7 @@ from tests.conftest_helpers.pretest import (
     perform_pretest_cleanups,
     copy_vm_binaries_if_needed,
     start_tcpdump_processes,
+    WindowsLeftoverGuard,
 )
 from tests.conftest_helpers.setup_checks import (
     perform_setup_checks,
@@ -354,6 +355,7 @@ class _PhaseTimeout:
 
 def pytest_configure(config):
     config.pluginmanager.register(_PhaseTimeout())
+    config.pluginmanager.register(WindowsLeftoverGuard())
 
 
 # Session-long AsyncExitStack is created at session start and closed at session finish.

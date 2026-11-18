@@ -13,6 +13,9 @@ from tests.utils.process import Process, SshProcess
 from typing import List, AsyncIterator
 from uuid import uuid4
 
+CONNECT_TIMEOUT_S = 30
+LOGIN_TIMEOUT_S = 30
+
 
 class SshConnection(Connection):
     _connection: asyncssh.SSHClientConnection
@@ -94,8 +97,8 @@ class SshConnection(Connection):
             password=password,
             known_hosts=None,
             agent_path=None,
-            connect_timeout=30,
-            login_timeout=30,
+            connect_timeout=CONNECT_TIMEOUT_S,
+            login_timeout=LOGIN_TIMEOUT_S,
             keepalive_interval=15,
             keepalive_count_max=4,
         )
