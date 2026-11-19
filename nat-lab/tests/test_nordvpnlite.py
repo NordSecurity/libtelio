@@ -128,6 +128,41 @@ async def test_nordvpnlite_creates_missing_log_directory(is_relative: bool) -> N
             ).execute()
 
 
+async def test_nordvpnlite_log_file_permissions() -> None:
+    """NordVPN Lite creates log files with 640 permissions"""
+    async with AsyncExitStack() as exit_stack:
+        connection = (
+            await setup_connections(exit_stack, [ConnectionTag.DOCKER_CONE_CLIENT_1])
+        )[0].connection
+
+        config = copy.deepcopy(CONFIG_PRESETS[ConfigPresetName.DEFAULT])
+        nordvpnlite = await NordVpnLite.new(exit_stack, config, connection=connection)
+        await nordvpnlite.request_credentials_from_core()
+
+        async with nordvpnlite.start():
+            await nordvpnlite.wait_for_telio_running_status()
+
+        log_files = [
+            str(nordvpnlite.config.paths.daemon_log),
+            str(nordvpnlite.config.paths.lib_log),
+        ]
+
+        for log_file in log_files:
+            await connection.create_process(["test", "-s", log_file]).execute()
+            permissions = (
+                (
+                    await connection.create_process(
+                        ["stat", "-c", '"%a"', log_file]
+                    ).execute()
+                )
+                .get_stdout()
+                .replace('"', "")
+            )
+            assert (
+                permissions == "640"
+            ), f"Wrong permissions for file {log_file}. Expected 640, got {permissions}"
+
+
 @pytest.mark.parametrize(
     "config",
     [
