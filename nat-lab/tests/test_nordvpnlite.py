@@ -129,6 +129,74 @@ async def test_nordvpnlite_creates_missing_log_directory(is_relative: bool) -> N
 
 
 @pytest.mark.parametrize(
+    "no_detach",
+    [True, False],
+    ids=["no_detach", "detach"],
+)
+async def test_nordvpnlite_log_file_permissions(no_detach: bool) -> None:
+    """
+    NordVPNLite log files should have permissions 640, both in daemon and no-detach modes
+
+    Steps:
+        1. Create log file with 666 permissions
+        2. Start nordvpnlite
+        3. Wait for nordvpnlite to be running
+        4. Verify log files have permissions 640
+        5. Restart nordpvnlite (and have it remove old log files)
+        6. Wait for nordvpnlite to be running
+        7. Verify log files have permissions 640
+        8. Restart nordpvnlite (without removing old log files)
+        9. Wait for nordvpnlite to be running
+        10. Verify log files have permissions 640
+    """
+
+    async def assert_file_permissions(connection, file, expected):
+        proc = await connection.create_process(["stat", "-c", '"%a"', file]).execute()
+        stdout = proc.get_stdout()
+        actual = stdout.replace('"', "")
+        assert (
+            actual == expected
+        ), f"Wrong permissions for file {file}. Expected {expected}, got {actual}"
+
+    async with AsyncExitStack() as exit_stack:
+        connection = (
+            await setup_connections(exit_stack, [ConnectionTag.DOCKER_CONE_CLIENT_1])
+        )[0].connection
+
+        config = copy.deepcopy(CONFIG_PRESETS[ConfigPresetName.DEFAULT])
+        nordvpnlite = await NordVpnLite.new(
+            exit_stack, config, connection=connection, no_detach=no_detach
+        )
+        await nordvpnlite.request_credentials_from_core()
+
+        if no_detach:
+            log_files = [
+                str(nordvpnlite.config.paths.lib_log),
+            ]
+        else:
+            log_files = [
+                str(nordvpnlite.config.paths.daemon_log),
+                str(nordvpnlite.config.paths.lib_log),
+            ]
+
+        for log_file in log_files:
+            await connection.create_process(["rm", "-f", log_file]).execute()
+            await connection.create_process(["touch", log_file]).execute()
+            await connection.create_process(["chmod", "666", log_file]).execute()
+            await assert_file_permissions(connection, log_file, "666")
+
+        pre_remove_old_logs = False
+        for _ in range(3):
+            async with nordvpnlite.start(pre_remove_logs=pre_remove_old_logs):
+                await nordvpnlite.wait_for_telio_running_status()
+
+            for log_file in log_files:
+                await assert_file_permissions(connection, log_file, "640")
+
+            pre_remove_old_logs = not pre_remove_old_logs
+
+
+@pytest.mark.parametrize(
     "config",
     [
         CONFIG_PRESETS[ConfigPresetName.MANUAL],
