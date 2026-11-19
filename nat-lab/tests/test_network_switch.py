@@ -1,6 +1,7 @@
 import asyncio
 import pytest
-from contextlib import AsyncExitStack
+import re
+from contextlib import asynccontextmanager, AsyncExitStack
 from tests import config
 from tests.helpers import (
     setup_connections,
@@ -11,6 +12,7 @@ from tests.helpers import (
 from tests.utils import stun
 from tests.utils.asyncio_util import run_async_contexts
 from tests.utils.bindings import (
+    default_features,
     features_with_endpoint_providers,
     EndpointProvider,
     PathType,
@@ -18,7 +20,8 @@ from tests.utils.bindings import (
     NodeState,
     RelayState,
 )
-from tests.utils.connection import TargetOS, ConnectionTag
+from tests.utils.connection import Connection, TargetOS, ConnectionTag
+from tests.utils.network_switcher.network_switcher import NetworkSwitcher
 from tests.utils.network_switcher.network_switcher_windows import (
     Interface as WinInterface,
     NetworkSwitcherWindows,
@@ -26,6 +29,7 @@ from tests.utils.network_switcher.network_switcher_windows import (
 )
 from tests.utils.ping import ping
 from tests.utils.process import ProcessExecError
+from typing import AsyncIterator
 from unittest.mock import Mock, AsyncMock, patch
 
 
@@ -206,6 +210,122 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
 
         ip = await stun.get(alpha_connection, config.STUN_SERVER)
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
+
+
+async def _mac_if_index(connection: Connection, ifname: str) -> int:
+    process = await connection.create_process(
+        ["python3", "-c", f"import socket; print(socket.if_nametoindex('{ifname}'))"]
+    ).execute()
+    return int(process.get_stdout())
+
+
+async def _mac_if_for_gw(connection: Connection, network: str) -> str:
+    # Interface names aren't stable across VM boots, so look them up by gateway
+    gw = config.GW_ADDR_MAP[connection.tag][network]
+    process = await connection.create_process(["route", "-n", "get", gw]).execute()
+    return re.findall(r"interface: (\S+)", process.get_stdout())[0]
+
+
+@asynccontextmanager
+async def _mac_decoy_interface(
+    connection: Connection, network_switcher: NetworkSwitcher
+) -> AsyncIterator[str]:
+    # Secondary interface goes first in service order, but has no router.
+    # Yields the primary interface name.
+    primary = await _mac_if_for_gw(connection, "primary")
+    secondary = await _mac_if_for_gw(connection, "secondary")
+    process = await connection.create_process(
+        ["networksetup", "-listnetworkserviceorder"]
+    ).execute()
+    services = re.findall(
+        r"^\((?:\d+|\*)\) (.+)\n\(Hardware Port: .*, Device: (\S*)\)",
+        process.get_stdout(),
+        re.M,
+    )
+    order = [name for name, _ in services]
+    decoy = [name for name, device in services if device == secondary][0]
+    info = (
+        await connection.create_process(["networksetup", "-getinfo", decoy]).execute()
+    ).get_stdout()
+    ip = re.findall(r"^IP address: (\S+)", info, re.M)[0]
+    mask = re.findall(r"^Subnet mask: (\S+)", info, re.M)[0]
+
+    try:
+        await connection.create_process(
+            ["networksetup", "-setmanual", decoy, ip, mask]
+        ).execute()
+        await connection.create_process(
+            ["networksetup", "-ordernetworkservices", decoy]
+            + [name for name in order if name != decoy]
+        ).execute()
+        await network_switcher.switch_to_primary_network()
+        yield primary
+    finally:
+        if info.startswith("DHCP"):
+            await connection.create_process(
+                ["networksetup", "-setdhcp", decoy]
+            ).execute()
+        else:
+            router = re.findall(r"^Router: ([\d.]+)", info, re.M)
+            await connection.create_process(
+                ["networksetup", "-setmanual", decoy, ip, mask] + router
+            ).execute()
+        await connection.create_process(
+            ["networksetup", "-ordernetworkservices"] + order
+        ).execute()
+        await network_switcher.switch_to_primary_network()
+
+
+@pytest.mark.asyncio
+@pytest.mark.mac
+async def test_mac_interface_selection_with_decoy_interface() -> None:
+    features = default_features()
+    # Enables socket watcher
+    features.is_test_env = False
+
+    async with AsyncExitStack() as exit_stack:
+        env = await exit_stack.enter_async_context(
+            setup_environment(
+                exit_stack,
+                [
+                    SetupParameters(
+                        connection_tag=ConnectionTag.VM_MAC,
+                        adapter_type_override=TelioAdapterType.NEP_TUN,
+                        features=features,
+                        is_meshnet=False,
+                    )
+                ],
+                vpn=[ConnectionTag.DOCKER_VPN_1],
+            )
+        )
+        client_alpha, *_ = env.clients
+        alpha_conn_mngr, *_ = env.connections
+        connection = alpha_conn_mngr.connection
+        assert alpha_conn_mngr.network_switcher
+
+        primary = await exit_stack.enter_async_context(
+            _mac_decoy_interface(connection, alpha_conn_mngr.network_switcher)
+        )
+
+        # Sockets are not bound with start_named
+        await client_alpha.stop_device()
+        tun = await client_alpha.create_tun(11)
+        await client_alpha.start_with_tun(tun, "utun11")
+        client_alpha.get_router().set_interface_name("utun11")
+
+        wg_server = config.WG_SERVER
+        await client_alpha.vpn.connect(
+            str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
+        )
+        await ping(connection, config.PHOTO_ALBUM_IP)
+
+        bound = set(
+            re.findall(
+                r"Binding relay socket \d+ to default interface: (\d+)",
+                await client_alpha.log.get(),
+            )
+        )
+        assert bound == {str(await _mac_if_index(connection, primary))}, bound
 
 
 @pytest.mark.asyncio
