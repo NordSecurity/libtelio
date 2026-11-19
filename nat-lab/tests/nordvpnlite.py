@@ -134,13 +134,6 @@ class Paths:
     log_dir: Path = Path("/var/log")
     run_dir: Path = Path("/run")
 
-    def __post_init__(self):
-        if os.environ.get("PYTEST_CURRENT_TEST") and self.exec_path.parent != Path("."):
-            if not self.exec_path.exists():
-                raise FileNotFoundError(
-                    f"NordVPN Lite executable not found: {self.exec_path}"
-                )
-
     @property
     def socket_file(self) -> Path:
         return self.run_dir / "nordvpnlited.sock"

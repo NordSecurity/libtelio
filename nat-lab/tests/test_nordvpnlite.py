@@ -6,6 +6,7 @@ from pathlib import Path
 from tests.config import NLX_SERVER, PHOTO_ALBUM_IP, STUN_SERVER, WG_SERVER, WG_SERVER_2
 from tests.helpers import setup_connections
 from tests.nordvpnlite import (
+    Config,
     NordVpnLite,
     ConfigPresetName,
     CONFIG_PRESETS,
@@ -13,6 +14,7 @@ from tests.nordvpnlite import (
     NordVpnLiteConfig,
     VPNConfig,
     VPNServer,
+    Paths,
 )
 from tests.test_pq import inspect_preshared_key
 from tests.utils import stun
@@ -75,6 +77,55 @@ async def test_nordvpnlite_logs() -> None:
                     done = True
             except ProcessExecError:
                 await asyncio.sleep(1)
+
+
+@pytest.mark.parametrize("is_relative", [False, True], ids=["absolute", "relative"])
+async def test_nordvpnlite_creates_missing_log_directory(is_relative: bool) -> None:
+    """NordVPN Lite creates the configured log file's missing parent directory"""
+    async with AsyncExitStack() as exit_stack:
+        connection = (
+            await setup_connections(exit_stack, [ConnectionTag.DOCKER_CONE_CLIENT_1])
+        )[0].connection
+
+        test_dir_name = Path("nordvpnlite-natlab/missing-log-directory")
+        log_file = "nordvpnlite_natlab.log"
+
+        if is_relative:
+            proc = await connection.create_process(["pwd"]).execute()
+            expected_log_dir = Path(proc.get_stdout().strip()) / test_dir_name
+        else:
+            test_dir_name = Path("/tmp") / test_dir_name
+            expected_log_dir = test_dir_name
+
+        log_file_path = str(test_dir_name / log_file)
+
+        # Make sure that the parent directory of the logfile doesn't exist
+        await connection.create_process(["rm", "-rf", str(expected_log_dir)]).execute()
+        await connection.create_process(
+            ["test", "!", "-e", str(expected_log_dir)]
+        ).execute()
+
+        config_data = copy.deepcopy(CONFIG_PRESETS[ConfigPresetName.DEFAULT])
+        config_data.log_file_path = log_file_path
+        config = Config(
+            config_data,
+            paths=Paths(log_dir=expected_log_dir),
+        )
+        nordvpnlite = NordVpnLite(connection, exit_stack, config)
+        await nordvpnlite.request_credentials_from_core()
+
+        async with nordvpnlite.start():
+            await nordvpnlite.wait_for_telio_running_status()
+
+            expected_log_path = expected_log_dir / log_file
+            # Verify that the log file exists
+            await connection.create_process(
+                ["test", "-s", str(expected_log_path)]
+            ).execute()
+            # Verify that the log file contains _something_, as proof that nordvpnlite is logging to it
+            await connection.create_process(
+                ["grep", "-q", "nordvpnlite::daemon", str(expected_log_path)]
+            ).execute()
 
 
 @pytest.mark.parametrize(
