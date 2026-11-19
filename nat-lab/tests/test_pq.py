@@ -567,14 +567,7 @@ class PqV1RekeyAcceptedError(Exception):
 
 
 # A v1 rekey has no auth tag and goes inside the VPN tunnel, so anything
-# that can send traffic through the client's tunnel can send one. Remove
-# xfail once nlx rejects rekeys whose version differs from the one used in
-# the session's GET (LLTSS-1649).
-@pytest.mark.xfail(
-    strict=True,
-    raises=PqV1RekeyAcceptedError,
-    reason="nlx accepts unauthenticated v1 rekey for a v2 PQ session",
-)
+# that can send traffic through the client's tunnel can send one.
 @pytest.mark.nlx
 async def test_pq_v2_session_rejects_v1_rekey(exit_stack: AsyncExitStack) -> None:
     alpha_setup_params = SetupParameters(
