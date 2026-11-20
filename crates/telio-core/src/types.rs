@@ -64,6 +64,7 @@ pub enum TelioLogLevel {
     Trace = 5,
 }
 
+#[cfg(feature = "uniffi")]
 impl From<uniffi::UnexpectedUniFFICallbackError> for TelioErrorVariant {
     fn from(err: uniffi::UnexpectedUniFFICallbackError) -> Self {
         let err_string = err.to_string();
