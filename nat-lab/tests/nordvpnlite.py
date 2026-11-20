@@ -561,12 +561,20 @@ class NordVpnLite:
 
     async def wait_for_vpn_connected_state(self):
         # TODO: remove after LLT-6693
+        await self.wait_for_vpn_state("connected")
+
+    async def wait_for_vpn_connecting_state(self):
+        # TODO: remove after LLT-6693
+        await self.wait_for_vpn_state("connecting")
+
+    async def wait_for_vpn_state(self, state: str):
+        # TODO: remove after LLT-6693
         await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
         while True:
             try:
                 status = json.loads(await self.get_status())
                 if status["exit_node"]:
-                    if status["exit_node"]["state"] == "connected":
+                    if status["exit_node"]["state"] == state:
                         return
                 await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
             except IgnoreableError:
