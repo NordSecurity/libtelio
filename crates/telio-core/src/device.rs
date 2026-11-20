@@ -635,7 +635,7 @@ impl Device {
 
     pub fn external_nodes(&self) -> Result<Vec<Node>> {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |s| Ok(s.external_nodes().await)).await?
+            task_exec!(self.rt()?, async move |s| s.external_nodes().await).await?
         })
     }
 
@@ -688,7 +688,7 @@ impl Device {
     pub fn get_adapter_luid(&mut self) -> u64 {
         if let Some(art) = &self.async_runtime {
             let res: Result<u64> = art.block_on(async {
-                task_exec!(self.rt()?, async move |rt| Ok(rt.get_adapter_luid().await)).await?
+                task_exec!(self.rt()?, async move |rt| rt.get_adapter_luid().await).await?
             });
             res.unwrap_or(0)
         } else {
@@ -720,7 +720,7 @@ impl Device {
         let private_key = private_key.clone(); //Going into async context, therefore just copy for lifetimes
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.set_private_key(&private_key).boxed().await)
+                rt.set_private_key(&private_key).boxed().await
             })
             .await?
         })
@@ -731,7 +731,7 @@ impl Device {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
                 let _guard = rt.entities.network_monitor.pause();
-                Ok(rt.set_tun(tun).boxed().await)
+                rt.set_tun(tun).boxed().await
             })
             .await?
         })
@@ -745,7 +745,7 @@ impl Device {
     pub fn set_ext_if_filter(&self, ext_if_filter: Vec<String>) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.set_ext_if_filter(ext_if_filter).boxed().await)
+                rt.set_ext_if_filter(ext_if_filter).boxed().await
             })
             .await?
         })
@@ -755,7 +755,7 @@ impl Device {
     pub fn set_adapter_mtu(&self, mtu: Option<u32>) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.set_adapter_mtu(mtu).boxed().await)
+                rt.set_adapter_mtu(mtu).boxed().await
             })
             .await?
         })
@@ -764,7 +764,7 @@ impl Device {
     /// Retrieves currently configured private key for the interface
     pub fn get_private_key(&self) -> Result<SecretKey> {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt.get_private_key().await)).await?
+            task_exec!(self.rt()?, async move |rt| rt.get_private_key().await).await?
         })
     }
 
@@ -773,10 +773,9 @@ impl Device {
     #[cfg_attr(docsrs, doc(cfg(target_os = "linux")))]
     pub fn set_fwmark(&self, fwmark: u32) -> Result {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt
-                .set_fwmark(fwmark)
-                .boxed()
-                .await))
+            task_exec!(self.rt()?, async move |rt| {
+                rt.set_fwmark(fwmark).boxed().await
+            })
             .await?
         })
     }
@@ -787,10 +786,9 @@ impl Device {
     pub fn set_config(&self, config: &Option<Config>) -> Result {
         let config = config.clone();
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt
-                .set_config(&config)
-                .boxed()
-                .await))
+            task_exec!(self.rt()?, async move |rt| {
+                rt.set_config(&config).boxed().await
+            })
             .await?
         })
     }
@@ -808,7 +806,7 @@ impl Device {
     ) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.enable_tp_lite_stats_collection(config, collect_stats_cb))
+                rt.enable_tp_lite_stats_collection(config, collect_stats_cb)
             })
             .await?
         })
@@ -818,7 +816,7 @@ impl Device {
     pub fn disable_tp_lite_stats_collection(&self) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.disable_tp_lite_stats_collection())
+                rt.disable_tp_lite_stats_collection()
             })
             .await?
         })
@@ -837,7 +835,7 @@ impl Device {
     ) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.set_tp_lite_domain_whitelist(domains, redirects).await)
+                rt.set_tp_lite_domain_whitelist(domains, redirects).await
             })
             .await?
         })
@@ -851,7 +849,7 @@ impl Device {
     pub fn notify_network_change(&self) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.notify_network_change().await)
+                rt.notify_network_change().await
             })
             .await?
         })
@@ -860,7 +858,7 @@ impl Device {
     pub fn set_tunnel_src_ip(&self, src_ips: Vec<IpAddr>) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.set_tunnel_src_ip(src_ips).await)
+                rt.set_tunnel_src_ip(src_ips).await
             })
             .await?
         })
@@ -868,13 +866,13 @@ impl Device {
 
     pub fn notify_sleep(&self) -> Result {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt.notify_sleep().await)).await?
+            task_exec!(self.rt()?, async move |rt| rt.notify_sleep().await).await?
         })
     }
 
     pub fn notify_wakeup(&self) -> Result {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt.notify_wakeup().await)).await?
+            task_exec!(self.rt()?, async move |rt| rt.notify_wakeup().await).await?
         })
     }
 
@@ -885,13 +883,10 @@ impl Device {
     /// the specified (matched by public key) meshnet node is "promoted" to be the exit node
     pub fn connect_exit_node(&self, config: Arc<ConnectionConfig>) -> Result {
         self.async_runtime()?.block_on(async {
-            let _wireguard_interface: Arc<DynamicWg> = task_exec!(self.rt()?, async move |rt| {
-                rt.connect_exit_node(config).boxed().await?;
-                Ok(rt.entities.wireguard_interface.clone())
+            task_exec!(self.rt()?, async move |rt| {
+                rt.connect_exit_node(config).boxed().await
             })
-            .await?;
-
-            Ok(())
+            .await?
         })
     }
 
@@ -903,13 +898,10 @@ impl Device {
     /// this call will error out.
     pub fn connect_vpn_post_quantum(&self, config: Arc<ConnectionConfig>) -> Result {
         self.async_runtime()?.block_on(async {
-            let _wireguard_interface: Arc<DynamicWg> = task_exec!(self.rt()?, async move |rt| {
-                rt.connect_exit_node_pq(config).boxed().await?;
-                Ok(rt.entities.wireguard_interface.clone())
+            task_exec!(self.rt()?, async move |rt| {
+                rt.connect_exit_node_pq(config).boxed().await
             })
-            .await?;
-
-            Ok(())
+            .await?
         })
     }
 
@@ -920,7 +912,7 @@ impl Device {
         self.async_runtime()?.block_on(async {
             let node_key = *node_key;
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.disconnect_exit_node(&node_key).boxed().await)
+                rt.disconnect_exit_node(&node_key).boxed().await
             })
             .await?
         })
@@ -931,7 +923,7 @@ impl Device {
     pub fn disconnect_exit_nodes(&self) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.disconnect_exit_nodes().boxed().await)
+                rt.disconnect_exit_nodes().boxed().await
             })
             .await?
         })
@@ -959,7 +951,7 @@ impl Device {
         self.async_runtime()?.block_on(async {
             let upstream_servers = upstream_servers.to_vec();
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.start_dns(&upstream_servers).boxed().await)
+                rt.start_dns(&upstream_servers).boxed().await
             })
             .await?
         })
@@ -970,7 +962,7 @@ impl Device {
     /// Undoes the effects of `device::enable_magic_dns()` call
     pub fn disable_magic_dns(&self) -> Result {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt.stop_dns().boxed().await)).await?
+            task_exec!(self.rt()?, async move |rt| rt.stop_dns().boxed().await).await?
         })
     }
 
@@ -978,41 +970,40 @@ impl Device {
     ///
     /// Used only for testing purposes
     pub fn _panic(&self) -> Result {
-        self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt._panic().await)).await?
-        })
+        self.async_runtime()?
+            .block_on(async { task_exec!(self.rt()?, async move |rt| rt._panic().await).await? })
     }
 
     /// Retrieves a reference to SocketPool. Use this instead of SocketPool::default() when possible
     pub fn get_socket_pool(&self) -> Result<Arc<SocketPool>> {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt.get_socket_pool().await)).await?
+            task_exec!(self.rt()?, async move |rt| rt.get_socket_pool().await).await?
         })
     }
 
     pub fn trigger_analytics_event(&self) -> Result<()> {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt
-                .trigger_analytics_event()
-                .await))
+            task_exec!(self.rt()?, async move |rt| {
+                rt.trigger_analytics_event().await
+            })
             .await?
         })
     }
 
     pub fn trigger_qos_collection(&self) -> Result<()> {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt
-                .trigger_qos_collection()
-                .await))
+            task_exec!(self.rt()?, async move |rt| {
+                rt.trigger_qos_collection().await
+            })
             .await?
         })
     }
 
     pub fn receive_ping(&self) -> Result<String> {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(
+            task_exec!(self.rt()?, async move |rt| {
                 Box::pin(rt.receive_ping()).await
-            ))
+            })
             .await?
         })
     }
@@ -2780,14 +2771,23 @@ impl TaskRuntime for Runtime {
                             if let Some(direct_entities) = mesh_entities.direct.as_ref() {
                                 // We have downgraded the connection. Notify cross ping check about that.
                                 direct_entities.cross_ping_check.notify_failed_wg_connection(public_key)
-                                    .await?;
+                                    .await
+                                    .unwrap_or_else(
+                                        |e| {
+                                            telio_log_warn!("Failed to notify cross ping check about downgraded peer {public_key}: {e:?}. Ignoring");
+                                        });
                                 direct_entities.upgrade_sync.clear_accepted_session(public_key).await;
                             } else {
                                 telio_log_warn!("Connection downgraded while direct entities are disabled");
                             }
 
                             // Unmute pair to allow communication through proxy
-                            mesh_entities.proxy.mute_peer(public_key, None).await?;
+                            mesh_entities.proxy.mute_peer(public_key, None)
+                                .await
+                                .unwrap_or_else(
+                                    |e| {
+                                        telio_log_warn!("Failed to unmute downgraded peer {public_key}: {e:?}. Ignoring");
+                                    });
 
                             telio_log_info!("Peer {} was downgraded", public_key);
                         }

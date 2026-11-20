@@ -112,11 +112,9 @@ impl StarcastPeer {
     /// A result indicating wether the configuration was successful.
     pub async fn configure(&self, config: Config) -> Result<(), Error> {
         task_exec!(&self.task, async move |state| {
-            Ok(state.configure(config).await)
+            state.configure(config).await
         })
-        .await??;
-
-        Ok(())
+        .await?
     }
 
     /// Configure (or reconfigure) the wireguard listen address.
@@ -138,7 +136,6 @@ impl StarcastPeer {
                 );
                 state.wg_sock_addr = wg_addr;
             }
-            Ok(())
         })
         .await?;
         Ok(())
@@ -150,7 +147,7 @@ impl StarcastPeer {
     ///
     /// A starcast peer.
     pub async fn get_peer(&self) -> Result<Peer, Error> {
-        task_exec!(&self.task, async move |state| Ok(state.get_peer())).await?
+        task_exec!(&self.task, async move |state| state.get_peer()).await?
     }
 
     /// Stop the starcast virtual peer.

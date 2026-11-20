@@ -809,7 +809,7 @@ mod tests {
         let t = Task::start(analytics);
 
         async fn ping_cnt(task: &Task<Analytics>) -> i32 {
-            task_exec!(task, async move |state| Ok(state.ping_cnt as i32))
+            task_exec!(task, async move |state| state.ping_cnt as i32)
                 .await
                 .unwrap()
         }

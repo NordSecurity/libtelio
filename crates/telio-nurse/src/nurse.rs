@@ -8,7 +8,7 @@ use telio_model::event::Event;
 use telio_sockets::SocketPool;
 use telio_task::{
     io::{chan, mc_chan, Chan, McChan},
-    task_exec, ExecError, Runtime, RuntimeExt, Task, WaitResponse,
+    task_exec, Runtime, RuntimeExt, Task, WaitResponse,
 };
 use telio_utils::{
     telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
@@ -82,7 +82,6 @@ impl Nurse {
     pub async fn configure_meshnet(&self, meshnet_entities: Option<MeshnetEntities>) {
         let _ = task_exec!(&self.task, async move |state| {
             state.configure_meshnet(meshnet_entities).await;
-            Ok(())
         })
         .await;
     }
@@ -91,7 +90,6 @@ impl Nurse {
     pub async fn set_private_key(&self, private_key: SecretKey) {
         let _ = task_exec!(&self.task, async move |state| {
             state.set_private_key(private_key).await;
-            Ok(())
         })
         .await;
     }
@@ -100,7 +98,6 @@ impl Nurse {
     pub async fn send_disconnect_data(&self) {
         let _ = task_exec!(&self.task, async move |state| {
             state.send_disconnect_data().await;
-            Ok(())
         })
         .await;
     }
@@ -216,8 +213,6 @@ impl State {
             state.configure_meshnet(meshnet_entities).await;
 
             telio_log_debug!("Updated meshnet config");
-
-            Ok(())
         })
         .await;
     }
@@ -232,8 +227,6 @@ impl State {
             state.cached_private_key = Some(private_key);
             state.update_public_key().await;
             telio_log_debug!("Updated private key");
-
-            Ok(())
         })
         .await;
     }
@@ -255,7 +248,7 @@ impl State {
                 state.clean_nodes_list(&every_node_in_config);
                 state.reset_cached_data();
 
-                Ok(result)
+                result
             })
             .await
             .unwrap_or_default()
@@ -382,8 +375,8 @@ impl State {
     }
 
     async fn send_disconnect_data(&self) {
-        if let Ok(Ok(hb_info)) = task_exec!(&self.heartbeat, async move |state| {
-            Ok(state.get_disconnect_data().await.map_err(|_| ExecError))
+        if let Ok(Some(hb_info)) = task_exec!(&self.heartbeat, async move |state| {
+            state.get_disconnect_data().await.ok()
         })
         .await
         {

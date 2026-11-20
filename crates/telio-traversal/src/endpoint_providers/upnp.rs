@@ -422,7 +422,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
     async fn get_endpoint_candidate(&self) -> Option<EndpointCandidate> {
         task_exec!(&self.task, async move |s| {
             let _ = s.check_endpoint_candidate().await;
-            Ok(s.endpoint_candidate.clone())
+            s.endpoint_candidate.clone()
         })
         .await
         .unwrap_or(None)
@@ -435,7 +435,6 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
     async fn unpause_for_test(&self) {
         let _ = task_exec!(&self.task, async move |s| {
             s.is_endpoint_provider_paused = false;
-            Ok(())
         })
         .await;
     }
@@ -443,12 +442,12 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
     pub async fn get_internal_socket(&self) -> Option<SocketAddr> {
         task_exec!(&self.task, async move |s| {
             if s.endpoint_candidate.is_some() {
-                Ok(Some(SocketAddr::new(
+                Some(SocketAddr::new(
                     IpAddr::V4(s.ip_addr),
                     s.proxy_port_mapping.internal,
-                )))
+                ))
             } else {
-                Ok(None)
+                None
             }
         })
         .await
@@ -464,7 +463,6 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
                 );
                 let _ = delete.await;
             };
-            Ok(())
         })
         .await;
         let _ = self.task.stop().await.resume_unwind();
@@ -480,7 +478,6 @@ impl<Wg: WireGuard> EndpointProvider for UpnpEndpointProvider<Wg> {
     async fn subscribe_for_pong_events(&self, tx: Tx<PongEvent>) {
         task_exec!(&self.task, async move |s| {
             s.pong_events_tx = Some(tx);
-            Ok(())
         })
         .await
         .unwrap_or_default()
@@ -492,7 +489,6 @@ impl<Wg: WireGuard> EndpointProvider for UpnpEndpointProvider<Wg> {
     ) {
         task_exec!(&self.task, async move |s| {
             s.epc_event_tx = Some(tx);
-            Ok(())
         })
         .await
         .unwrap_or_default()
@@ -501,7 +497,6 @@ impl<Wg: WireGuard> EndpointProvider for UpnpEndpointProvider<Wg> {
     async fn trigger_endpoint_candidates_discovery(&self, _force: bool) -> Result<()> {
         let _ = task_exec!(&self.task, async move |s| {
             let _ = s.send_endpoint_candidate().await;
-            Ok(())
         })
         .await;
         Ok(())
@@ -510,7 +505,6 @@ impl<Wg: WireGuard> EndpointProvider for UpnpEndpointProvider<Wg> {
     async fn handle_endpoint_gone_notification(&self) {
         task_exec!(&self.task, async move |s| {
             s.endpoint_candidate = None;
-            Ok(())
         })
         .await
         .unwrap_or_default()
@@ -522,18 +516,17 @@ impl<Wg: WireGuard> EndpointProvider for UpnpEndpointProvider<Wg> {
         session_id: Session,
         public_key: PublicKey,
     ) -> Result<()> {
-        task_exec!(&self.task, async move |s| Ok(s
-            .send_ping(addr, session_id, &public_key)
-            .await))
+        task_exec!(&self.task, async move |s| {
+            s.send_ping(addr, session_id, &public_key).await
+        })
         .await?
     }
 
     async fn get_current_endpoints(&self) -> Option<Vec<EndpointCandidate>> {
         task_exec!(&self.task, async move |s| {
-            if let Some(candidate) = s.endpoint_candidate.clone() {
-                return Ok(Some(vec![candidate]));
-            }
-            Ok(None)
+            s.endpoint_candidate
+                .clone()
+                .map(|candidate| vec![candidate])
         })
         .await
         .unwrap_or(None)
@@ -544,7 +537,6 @@ impl<Wg: WireGuard> EndpointProvider for UpnpEndpointProvider<Wg> {
             if s.is_battery_optimization_on {
                 s.is_endpoint_provider_paused = true;
             }
-            Ok(())
         })
         .await;
     }
@@ -552,13 +544,12 @@ impl<Wg: WireGuard> EndpointProvider for UpnpEndpointProvider<Wg> {
     async fn unpause(&self) {
         let _ = task_exec!(&self.task, async move |s| {
             s.is_endpoint_provider_paused = false;
-            Ok(())
         })
         .await;
     }
 
     async fn is_paused(&self) -> bool {
-        task_exec!(&self.task, async move |s| Ok(s.is_endpoint_provider_paused))
+        task_exec!(&self.task, async move |s| s.is_endpoint_provider_paused)
             .await
             .unwrap_or(false)
     }

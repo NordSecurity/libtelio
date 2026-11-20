@@ -1,0 +1,1 @@
+Fix WireGuard adapter being stopped when an allowed IP moves between peers

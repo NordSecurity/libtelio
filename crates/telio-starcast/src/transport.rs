@@ -160,7 +160,6 @@ impl Transport {
     pub async fn configure(&self, config: Config) -> Result<(), Error> {
         task_exec!(&self.task, async move |state| {
             state.configure(config);
-            Ok(())
         })
         .await?;
         Ok(())

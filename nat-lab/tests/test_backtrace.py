@@ -73,10 +73,10 @@ GENERATED_ASYNC_ERROR = ErrorSource(
     message="UnknownError: PollingPeriodZero",
     allowed_errors=[],
     calls_innermost_first=[
-        ExpectedFrame("quux", 1042, {TargetOS.Windows: 1043}),
-        ExpectedFrame("baz", 1038),
-        ExpectedFrame("bar", 1034),
-        ExpectedFrame("foo", 1030),
+        ExpectedFrame("quux", 1033, {TargetOS.Windows: 1034}),
+        ExpectedFrame("baz", 1029),
+        ExpectedFrame("bar", 1025),
+        ExpectedFrame("foo", 1021),
     ],
     file_name="device.rs",
 )
