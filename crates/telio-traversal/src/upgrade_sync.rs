@@ -342,7 +342,7 @@ impl State {
                 // lost the state needed to verify the incoming request. Not a big deal,
                 // upgrade procedure will be restarted shortly either way.
                 telio_log_warn!(
-                    "Upgrade request from {public_key} for unknown session {} rejected",
+                    "Upgrade request from {public_key:?} for unknown session {} rejected",
                     upgrade_msg.session
                 );
 
@@ -363,7 +363,7 @@ impl State {
             }
             Err(e) => {
                 telio_log_warn!(
-                    "Upgrade request from {public_key} for session {} rejected: {e}",
+                    "Upgrade request from {public_key:?} for session {} rejected: {e}",
                     upgrade_msg.session
                 );
                 let decision = telio_proto::Decision::RejectedDueToUnknownSession;

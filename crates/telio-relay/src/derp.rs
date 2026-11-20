@@ -621,7 +621,7 @@ impl State {
             }
         } else {
             telio_log_debug!(
-                "({}) DERP --> Rx, received a packet with unknown pubkey: {}",
+                "({}) DERP --> Rx, received a packet with unknown pubkey: {:?}",
                 Self::NAME,
                 pk
             );

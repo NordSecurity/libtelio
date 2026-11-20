@@ -1,11 +1,12 @@
-use std::path::Path;
+use std::{io, path::Path};
 
+use telio_core::logging::LOG_CENSOR;
 use tracing::level_filters::LevelFilter;
 use tracing_appender::{
     non_blocking::{NonBlocking, WorkerGuard},
     rolling::{Builder, RollingFileAppender, Rotation},
 };
-use tracing_subscriber::{reload, Layer, Registry};
+use tracing_subscriber::{fmt::MakeWriter, reload, Layer, Registry};
 
 use crate::NordVpnLiteError;
 
@@ -49,10 +50,35 @@ fn build_appender<P: AsRef<Path>>(
         .map_err(Into::into)
 }
 
+/// Passes every formatted log line through libtelio's `LOG_CENSOR` before writing it.
+#[derive(Clone)]
+struct CensoredWriter<W>(W);
+
+impl<W: io::Write> io::Write for CensoredWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        // fmt layer writes each formatted event with a single write_all call
+        let line = String::from_utf8_lossy(buf).into_owned();
+        self.0.write_all(LOG_CENSOR.censor_logs(line).as_bytes())?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.0.flush()
+    }
+}
+
+impl<'a> MakeWriter<'a> for CensoredWriter<NonBlocking> {
+    type Writer = Self;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        self.clone()
+    }
+}
+
 fn build_fmt_layer(writer: NonBlocking) -> DynLayer {
     Box::new(
         tracing_subscriber::fmt::layer()
-            .with_writer(writer)
+            .with_writer(CensoredWriter(writer))
             .with_ansi(false)
             .with_line_number(true)
             .with_level(true),
@@ -123,4 +149,22 @@ macro_rules! nordvpnlite_logstd_error {
         ::tracing::error!($($arg)*);
         ::std::eprintln!("ERROR: {}", ::std::format_args!($($arg)*));
     }};
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn test_censored_writer_shortens_public_keys() {
+        let mut writer = CensoredWriter(Vec::new());
+        let line = b"Node connected: peer (JkgUJU4d25dRV/URMXlnOlcVF2Qbk3FuVpu4O0Lt9E4=)\n";
+
+        assert_eq!(line.len(), writer.write(line).unwrap());
+        assert_eq!(
+            "Node connected: peer (JkgU...9E4=)\n",
+            String::from_utf8(writer.0).unwrap()
+        );
+    }
 }

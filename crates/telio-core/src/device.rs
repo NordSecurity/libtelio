@@ -2789,7 +2789,7 @@ impl TaskRuntime for Runtime {
                                         telio_log_warn!("Failed to unmute downgraded peer {public_key}: {e:?}. Ignoring");
                                     });
 
-                            telio_log_info!("Peer {} was downgraded", public_key);
+                            telio_log_info!("Peer {:?} was downgraded", public_key);
                         }
                     }
                 }
@@ -2904,7 +2904,7 @@ impl TaskRuntime for Runtime {
                 Ok(())
             },
             Some((connection_error,vpn_pk)) = self.event_listeners.error_notification_service_subscriber.recv() => {
-                telio_log_debug!("Received (from vpn {vpn_pk}) connection error notification: {connection_error:?}");
+                telio_log_debug!("Received (from vpn {vpn_pk:?}) connection error notification: {connection_error:?}");
                 if let Some(exit_node) = &self.requested_state.exit_node {
                     if exit_node.public_key == vpn_pk {
                         let mut node = match self.last_transmitted_event.get(&exit_node.public_key) {
@@ -2926,7 +2926,7 @@ impl TaskRuntime for Runtime {
                             self.remember_last_transmitted_node_event(node);
                         }
                     } else {
-                        telio_log_warn!("Differen public keys, exit: {} vs event: {vpn_pk}", exit_node.public_key);
+                        telio_log_warn!("Differen public keys, exit: {:?} vs event: {vpn_pk:?}", exit_node.public_key);
                     }
                 } else {
                     telio_log_warn!("No exit node");

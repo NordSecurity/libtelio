@@ -986,7 +986,7 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                     }
                     reason => {
                         telio_log_debug!(
-                            "Skipping sending CMM to peer {} ({reason:?})",
+                            "Skipping sending CMM to peer {:?} ({reason:?})",
                             self.public_key,
                         );
                     }
@@ -1004,7 +1004,7 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                     }
                     reason => {
                         telio_log_debug!(
-                            "Skipping sending CMM to peer {} ({reason:?})",
+                            "Skipping sending CMM to peer {:?} ({reason:?})",
                             self.public_key
                         );
                     }

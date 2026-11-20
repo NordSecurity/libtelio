@@ -332,7 +332,7 @@ async fn consolidate_endpoint_invalidation<W: WireGuard, P: Proxy, C: CrossPingC
         if should_invalidate_endpoints {
             if let Err(err) = cpc.notify_failed_wg_connection(public_key).await {
                 telio_log_warn!(
-                    "Failed to send connection failed report for {public_key}: {err:?}"
+                    "Failed to send connection failed report for {public_key:?}: {err:?}"
                 );
             }
         }
@@ -806,7 +806,11 @@ async fn build_requested_peers_list<
             let public_key = wg_stun_server.public_key;
             let endpoint =
                 SocketAddr::new(IpAddr::V4(wg_stun_server.ipv4), wg_stun_server.stun_port);
-            telio_log_debug!("Configuring wg-stun peer: {}, at {}", public_key, endpoint);
+            telio_log_debug!(
+                "Configuring wg-stun peer: {:?}, at {}",
+                public_key,
+                endpoint
+            );
 
             let allowed_ips = if features.ipv6 {
                 vec![

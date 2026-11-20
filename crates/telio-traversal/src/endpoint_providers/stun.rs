@@ -217,7 +217,7 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
                 servers.retain(|server| {
                     if server.stun_plaintext_port == 0 {
                         telio_log_warn!(
-                            "Stun plaintext port was not provided for server {}!",
+                            "Stun plaintext port was not provided for server {:?}!",
                             server.public_key
                         );
                         return false;
