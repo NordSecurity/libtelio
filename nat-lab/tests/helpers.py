@@ -30,7 +30,6 @@ from tests.utils.connection_util import (
 )
 from tests.utils.logger import log
 from tests.utils.ping import ping
-from tests.utils.process import Process
 from tests.utils.router import IPStack
 from tests.utils.tcpdump import make_tcpdump
 from typing import Any, AsyncIterator, List, Tuple, Optional, Union, Dict
@@ -637,25 +636,6 @@ async def print_network_state(connection: Connection) -> None:
         "--- Log of iptables --list command ---\n %s",
         ip_tables,
     )
-
-
-async def wait_for_log_line(log_process: Process) -> None:
-    """
-    Accepts process polling for a log line and wait for a log to appear.
-
-    Args:
-        log_process (Process):
-            An active SSH or Docker process polling for a log line.
-
-    Returns:
-        None
-    """
-    while True:
-        await asyncio.sleep(1)
-        log_line = log_process.get_stdout().strip()
-        if log_line:
-            log.info("Expected log line captured: %s ", log_line)
-            return
 
 
 async def request_json(method: str, url: str, **kwargs: Any) -> Dict[str, Any]:

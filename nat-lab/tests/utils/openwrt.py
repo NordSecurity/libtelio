@@ -1,35 +1,125 @@
 import asyncio
 import asyncssh
-from contextlib import AsyncExitStack
+import json
 from tests.utils.connection import Connection
 from tests.utils.logger import log
-from tests.utils.process import Process, ProcessExecError
+from tests.utils.process import ProcessExecError
 
 
-async def start_logread_process(
+def _iface_uptime(status: dict) -> float | None:
+    """Extract the interface uptime from a netifd status."""
+    uptime = status.get("uptime")
+    if not isinstance(uptime, (int, float)):
+        return None
+    return float(uptime)
+
+
+def _iface_came_up_at(uptime: float | None, now: float) -> float | None:
+    """Return the uptime timestamp when the interface last came up, or None."""
+    if uptime is None:
+        return None
+    return now - uptime
+
+
+def _came_up_after(
+    came_up_at: float | None,
+    not_before: float | None,
+) -> bool:
+    """Return True if the interface came up after *not_before*."""
+    if not_before is None:
+        return True
+    if came_up_at is None:
+        return False
+
+    return came_up_at > not_before
+
+
+async def network_interface_status(connection: Connection, iface: str) -> dict:
+    """Query netifd for the current status of a network interface."""
+    proc = await connection.create_process(
+        ["ubus", "call", f"network.interface.{iface}", "status"]
+    ).execute()
+    return json.loads(proc.get_stdout())
+
+
+async def router_uptime(connection: Connection) -> float:
+    """Read the uptime from ``/proc/uptime`` in seconds."""
+    proc = await connection.create_process(["cat", "/proc/uptime"]).execute()
+    fields = proc.get_stdout().split()
+    if not fields:
+        raise ValueError("empty output from /proc/uptime")
+    return float(fields[0])
+
+
+async def wait_for_wan_up(
     connection: Connection,
-    exit_stack: AsyncExitStack,
-    log_line: str,
-) -> Process:
-    """
-    Start a background logread process on the given connection
-    and register it in the provided AsyncExitStack for automatic cleanup.
+    iface: str = "wan",
+    not_before: float | None = None,
+    timeout: float = 60.0,
+) -> None:
+    """Poll netifd until the WAN interface is up.
 
-    Args:
-        connection (Connection): Active SSH or Docker connection.
-        exit_stack (AsyncExitStack): Context stack for managing async cleanup.
-        log_line (str): Pattern to look for in logread output (grep filter).
+    If *not_before* is given (a router uptime timestamp just before a network change),
+    the interface must have come up after that moment.
 
-    Returns:
-        Process: The started SSH/Docker process streaming logs.
+    Raises TimeoutError if the interface is not up within *timeout* seconds.
     """
-    cmd = [
-        "sh",
-        "-c",
-        f'logread -f | grep -i "{log_line}"',
-    ]
-    process = await exit_stack.enter_async_context(connection.create_process(cmd).run())
-    return process
+    last_exc: Exception | None = None
+
+    async def _check_status() -> None:
+        nonlocal last_exc
+        while True:
+            try:
+                s = await network_interface_status(connection, iface)
+                now = await router_uptime(connection)
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                last_exc = exc
+                log.debug(
+                    "wait_for_wan_up: could not read %s status: %s: %s",
+                    iface,
+                    type(exc).__name__,
+                    exc,
+                )
+                await asyncio.sleep(1.0)
+                continue
+
+            last_exc = None
+            iface_uptime = _iface_uptime(s)
+            came_up_at = _iface_came_up_at(iface_uptime, now)
+            came_up_after = _came_up_after(came_up_at, not_before)
+
+            if s.get("up") and not s.get("pending") and came_up_after:
+                log.debug(
+                    "wait_for_wan_up: %s is up "
+                    "(iface uptime=%ss, came_up_at=%s, not_before=%s)",
+                    iface,
+                    iface_uptime,
+                    came_up_at,
+                    not_before,
+                )
+                return
+
+            log.debug(
+                "wait_for_wan_up: %s not ready yet "
+                "(up=%s, pending=%s, "
+                "iface uptime=%s, came_up_at=%s, not_before=%s)",
+                iface,
+                s.get("up"),
+                s.get("pending"),
+                iface_uptime,
+                came_up_at,
+                not_before,
+            )
+            await asyncio.sleep(1.0)
+
+    try:
+        await asyncio.wait_for(_check_status(), timeout)
+    except asyncio.TimeoutError as exc:
+        if last_exc is not None:
+            raise TimeoutError(
+                f"{iface} not up within {timeout}s; last error: {last_exc!r}"
+            ) from last_exc
+        raise TimeoutError(f"{iface} not up within {timeout}s") from exc
 
 
 async def wait_until_unreachable_after_reboot(connection: Connection, delay: int = 1):
