@@ -12,6 +12,7 @@ from tests.conftest_helpers.log_collection import collect_logs, collect_kernel_l
 from tests.conftest_helpers.pretest import (
     perform_pretest_cleanups,
     copy_vm_binaries_if_needed,
+    kill_windows_leftover_processes,
     start_tcpdump_processes,
 )
 from tests.conftest_helpers.setup_checks import (
@@ -261,7 +262,12 @@ def _test_uses_upnp(item) -> bool:
 
 
 def pytest_runtest_setup(item):
-    asyncio.run(perform_pretest_cleanups(reset_upnp=_test_uses_upnp(item)))
+    asyncio.run(
+        perform_pretest_cleanups(
+            reset_upnp=_test_uses_upnp(item),
+            windows_test=item.nodeid if item.get_closest_marker("windows") else None,
+        )
+    )
 
 
 def pytest_runtest_teardown(item, nextitem):  # pylint: disable=unused-argument
@@ -352,8 +358,26 @@ class _PhaseTimeout:
             self._disarm(old)
 
 
+class _WindowsLeftoverGuard:
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_runtest_teardown(
+        self, item, nextitem
+    ):  # pylint: disable=unused-argument
+        # Fixture teardown goes first, as it normally kills the test's processes.
+        # Whatever is still running after it is a leak.
+        try:
+            yield
+        finally:
+            if item.get_closest_marker("windows"):
+                # Needs a new event loop: the test's one is already closed.
+                asyncio.run(
+                    kill_windows_leftover_processes(item.nodeid, after_test=True)
+                )
+
+
 def pytest_configure(config):
     config.pluginmanager.register(_PhaseTimeout())
+    config.pluginmanager.register(_WindowsLeftoverGuard())
 
 
 # Session-long AsyncExitStack is created at session start and closed at session finish.

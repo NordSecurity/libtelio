@@ -1,4 +1,6 @@
+import asyncio
 import base64
+import ntpath
 import os
 import ssl
 import subprocess
@@ -7,7 +9,13 @@ import urllib.request
 from aiodocker import Docker
 from contextlib import AsyncExitStack
 from http import HTTPStatus
-from tests.config import LAN_ADDR_MAP, CORE_API_IP, CORE_API_CREDENTIALS
+from tests.config import (
+    LAN_ADDR_MAP,
+    CORE_API_IP,
+    CORE_API_CREDENTIALS,
+    IPERF_BINARY_WINDOWS,
+    STUN_BINARY_PATH_WINDOWS,
+)
 from tests.conftest_helpers.setup_checks import OPENWRT_VM_TAGS
 from tests.utils.connection import ConnectionTag, clear_ephemeral_setups_set
 from tests.utils.connection.adb_connection import AdbConnection
@@ -18,8 +26,23 @@ from tests.utils.connection_util import (
     running_container_names,
 )
 from tests.utils.logger import log, setup_log
+from tests.utils.process import ProcessExecError
 from tests.utils.router import IPStack, new_router
 from tests.utils.tcpdump import make_tcpdump, make_local_tcpdump
+from typing import Optional
+
+# SSH connect_timeout (30s) + login_timeout (30s) from SshConnection._connect,
+# plus 5s for taskkill itself.
+WINDOWS_LEFTOVER_CLEANUP_TIMEOUT_S = 65
+
+WINDOWS_LEFTOVER_PROCESS_IMAGES = [
+    "ping.exe",
+    ntpath.basename(STUN_BINARY_PATH_WINDOWS),
+    ntpath.basename(IPERF_BINARY_WINDOWS),
+    "interderpcli.exe",
+    "tcli.exe",
+    "python.exe",  # All python scripts
+]
 
 
 async def kill_natlab_processes():
@@ -135,6 +158,74 @@ async def reset_machines_cache():
         log.debug("Could not reset machines cache (server may not be running): %s", e)
 
 
+def _parse_taskkill_output(stdout: str, stderr: str) -> tuple[list[str], list[str]]:
+    killed = [
+        line.strip()
+        for line in stdout.splitlines()
+        if line.strip().upper().startswith("SUCCESS")
+    ]
+    errors = [
+        line.strip()
+        for line in stderr.splitlines()
+        if line.strip() and "not found" not in line.lower()
+    ]
+    return killed, errors
+
+
+async def _taskkill_windows_leftovers() -> tuple[list[str], list[str]]:
+    command = ["taskkill", "/F"]
+    for image in WINDOWS_LEFTOVER_PROCESS_IMAGES:
+        command += ["/IM", image]
+
+    async with new_connection_raw(
+        ConnectionTag.VM_WINDOWS_1, prepare=False
+    ) as connection:
+        try:
+            process = await connection.create_process(command, quiet=True).execute()
+            stdout, stderr = process.get_stdout(), process.get_stderr()
+        except ProcessExecError as e:
+            # taskkill exits non-zero whenever any of the images is not running,
+            # which is what a clean VM looks like.
+            stdout, stderr = e.stdout, e.stderr
+    return _parse_taskkill_output(stdout, stderr)
+
+
+async def kill_windows_leftover_processes(nodeid: str, after_test: bool = False):
+    # An aborted test does not kill the processes it started on the Windows VM.
+    # Kill them after the test, and before it in case an earlier kill failed.
+    when = "after" if after_test else "before"
+
+    try:
+        killed, errors = await asyncio.wait_for(
+            _taskkill_windows_leftovers(), WINDOWS_LEFTOVER_CLEANUP_TIMEOUT_S
+        )
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        setup_log.warning(
+            "Failed to clean up leftover processes on the Windows VM %s %s: %r",
+            when,
+            nodeid,
+            e,
+        )
+        return
+
+    if killed:
+        setup_log.warning(
+            "Killed %d leftover process(es) on the Windows VM %s %s; leaked by %s:\n%s",
+            len(killed),
+            when,
+            nodeid,
+            "this test" if after_test else "an earlier test or session",
+            "\n".join(killed),
+        )
+    if errors:
+        setup_log.warning(
+            "Leftover process cleanup on the Windows VM %s %s reported:\n%s",
+            when,
+            nodeid,
+            "\n".join(errors),
+        )
+
+
 PRETEST_CLEANUPS = [
     kill_natlab_processes,
     clear_ephemeral_setups_set,
@@ -143,7 +234,9 @@ PRETEST_CLEANUPS = [
 ]
 
 
-async def perform_pretest_cleanups(reset_upnp: bool = True):
+async def perform_pretest_cleanups(
+    reset_upnp: bool = True, windows_test: Optional[str] = None
+):
     for cleanup in PRETEST_CLEANUPS:
         await cleanup()
     # miniupnpd only accumulates stale mappings during UPNP tests, so the reset is
@@ -151,6 +244,8 @@ async def perform_pretest_cleanups(reset_upnp: bool = True):
     # gateway round-trips from the majority of tests.
     if reset_upnp:
         await reset_upnpd_on_upnp_gateways()
+    if windows_test is not None:
+        await kill_windows_leftover_processes(windows_test)
 
 
 async def _copy_vm_binaries(tag: ConnectionTag):
