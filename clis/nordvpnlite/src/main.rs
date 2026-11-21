@@ -2,8 +2,9 @@
 
 use clap::Parser;
 use daemonize::{Daemonize, Outcome};
-use std::fs::{self, OpenOptions};
+use std::fs::{self, OpenOptions, Permissions};
 use std::io::{Error, ErrorKind};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use tokio::time::{timeout, Duration};
 
 mod auth;
@@ -23,9 +24,6 @@ use crate::{
     core_api::get_countries_with_exp_backoff,
     daemon::NordVpnLiteError,
 };
-
-/// Umask allows only rw-rw-r--
-const DEFAULT_UMASK: u32 = 0o113;
 
 /// Default permissions for created files.
 const DEFAULT_FILE_PERMISSIONS: u32 = 0o640;
@@ -65,12 +63,14 @@ fn main() -> Result<(), NordVpnLiteError> {
                 .create(true)
                 .write(true)
                 .truncate(true)
+                .mode(DEFAULT_FILE_PERMISSIONS)
                 .open(&opts.stdout_path)?;
+
+            stdout_log_file.set_permissions(Permissions::from_mode(DEFAULT_FILE_PERMISSIONS))?;
 
             // Daemon working directory is set to `/` by default
             // any relative path operations from now on could fail
             let daemon = Daemonize::new()
-                .umask(DEFAULT_UMASK)
                 .working_directory(&opts.working_directory)
                 .stdout(stdout_log_file.try_clone()?)
                 .stderr(stdout_log_file);
