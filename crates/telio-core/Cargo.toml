@@ -11,6 +11,7 @@ default = ["enable_ens", "enable_firewall"]
 pretend_to_be_macos = ["telio-model/pretend_to_be_macos"]
 enable_ens = ["telio-proto/enable_ens"]
 enable_firewall = ["telio-firewall"]
+uniffi = ["dep:uniffi"]
 
 [dependencies]
 cfg-if = "1.0.4"
@@ -30,7 +31,7 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["full"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
-uniffi.workspace = true
+uniffi = { workspace = true, optional = true }
 uuid.workspace = true
 wireguard-uapi.workspace = true
 

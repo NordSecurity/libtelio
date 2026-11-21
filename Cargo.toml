@@ -39,7 +39,7 @@ uniffi.workspace = true
 uuid.workspace = true
 wireguard-uapi.workspace = true
 
-telio-core.workspace = true
+telio-core = { workspace = true, features = ["uniffi"] }
 telio-crypto.workspace = true
 telio-dns.workspace = true
 telio-network-monitors.workspace = true
