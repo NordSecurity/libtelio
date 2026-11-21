@@ -42,6 +42,8 @@ pub enum TelioTaskCmd {
     GetStatus(oneshot::Sender<TelioStatusReport>),
     // Connect to exit node with endpoint and optional hostname
     ConnectToExitNode(ExitNodeConfig),
+    // Set exit routes
+    SetExitRoutes(String),
     // Break the receive loop to quit the daemon and exit gracefully
     Quit(oneshot::Sender<()>),
 }
