@@ -15,7 +15,7 @@ use tokio::{
 };
 
 #[cfg(all(unix, feature = "neptun"))]
-use neptun::device::MakeExternalNeptun;
+use neptun::device::{ExternalGuard, MakeExternalNeptun};
 use telio_utils::{telio_log_debug, telio_log_warn};
 
 use crate::{
@@ -35,8 +35,9 @@ impl Drop for SocketGuard {
 }
 
 pub struct External<T: AsNativeSocket> {
-    socket: T,
+    // Declared before `socket` so the protector forgets the socket before it is closed
     guard: SocketGuard,
+    socket: T,
 }
 
 #[derive(Clone)]
@@ -200,8 +201,15 @@ impl SocketPool {
     }
 
     /// wraps protect() on android, fmark on linux and interface binding for others
-    pub fn make_external<T: AsNativeSocket>(&self, socket: T) {
+    ///
+    /// The socket stays registered with the protector until the returned [`External`] is dropped.
+    #[must_use]
+    pub fn make_external<T: AsNativeSocket>(&self, socket: T) -> External<T> {
         let _ = self.protect.make_external(socket.as_native_socket());
+        External {
+            guard: self.guard(socket.as_native_socket()),
+            socket,
+        }
     }
 
     /// binds socket to tunnel interface on mac and iOS
@@ -215,19 +223,24 @@ impl SocketPool {
         self.protect.make_external(socket.as_native_socket())?;
 
         Ok(External {
-            guard: SocketGuard {
-                protector: self.protect.clone(),
-                socket: socket.as_native_socket(),
-            },
+            guard: self.guard(socket.as_native_socket()),
             socket,
         })
+    }
+
+    fn guard(&self, socket: NativeSocket) -> SocketGuard {
+        SocketGuard {
+            protector: self.protect.clone(),
+            socket,
+        }
     }
 }
 
 #[cfg(all(unix, feature = "neptun"))]
 impl MakeExternalNeptun for SocketPool {
-    fn make_external(&self, socket: NativeSocket) {
+    fn make_external(&self, socket: NativeSocket) -> ExternalGuard {
         let _ = self.protect.make_external(socket);
+        ExternalGuard::new(self.guard(socket))
     }
 }
 
@@ -386,5 +399,81 @@ mod tests {
         let mut buf = [0; PACKET.len()];
         assert_eq!(PACKET.len(), socket.recv_from(&mut buf).await.unwrap().0);
         assert_eq!(PACKET, buf);
+    }
+
+    /// Mock protector expecting a single `make_external` and `clean` of `socket`,
+    /// returns the number of `clean` calls so far.
+    fn protector_cleaning(socket: NativeSocket) -> (MockProtector, Arc<Mutex<usize>>) {
+        let mut protect = MockProtector::default();
+        let cleaned = Arc::new(Mutex::new(0));
+
+        protect
+            .expect_make_external()
+            .withf(move |s| *s == socket)
+            .times(1)
+            .returning(|_| Ok(()));
+        protect
+            .expect_clean()
+            .withf(move |s| *s == socket)
+            .times(1)
+            .returning({
+                let cleaned = cleaned.clone();
+                move |_| *cleaned.lock().unwrap() += 1
+            });
+
+        (protect, cleaned)
+    }
+
+    #[tokio::test]
+    async fn make_external_cleans_on_drop() {
+        let udp = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let (protect, cleaned) = protector_cleaning(udp.as_native_socket());
+        let pool = SocketPool::new(protect);
+
+        let external = pool.make_external(udp);
+        assert_eq!(*cleaned.lock().unwrap(), 0);
+
+        drop(external);
+        assert_eq!(*cleaned.lock().unwrap(), 1);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn external_is_cleaned_before_socket_is_closed() {
+        let mut protect = MockProtector::default();
+        let open_at_clean = Arc::new(Mutex::new(None));
+
+        protect.expect_make_external().returning(|_| Ok(()));
+        protect.expect_clean().times(1).returning({
+            let open_at_clean = open_at_clean.clone();
+            move |socket| {
+                // Safe: F_GETFD only queries the descriptor flags
+                let open = unsafe { libc::fcntl(socket, libc::F_GETFD) } != -1;
+                *open_at_clean.lock().unwrap() = Some(open);
+            }
+        });
+        let pool = SocketPool::new(protect);
+
+        let udp = pool
+            .new_external_udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)), None)
+            .await
+            .unwrap();
+        drop(udp);
+
+        assert_eq!(*open_at_clean.lock().unwrap(), Some(true));
+    }
+
+    #[cfg(all(unix, feature = "neptun"))]
+    #[tokio::test]
+    async fn neptun_external_guard_cleans_on_drop() {
+        let udp = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let (protect, cleaned) = protector_cleaning(udp.as_native_socket());
+        let pool = SocketPool::new(protect);
+
+        let guard = MakeExternalNeptun::make_external(&pool, udp.as_native_socket());
+        assert_eq!(*cleaned.lock().unwrap(), 0);
+
+        drop(guard);
+        assert_eq!(*cleaned.lock().unwrap(), 1);
     }
 }
