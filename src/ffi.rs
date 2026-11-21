@@ -123,6 +123,11 @@ pub fn get_commit_sha() -> String {
     commit_sha().to_owned()
 }
 
+/// Get number of bytes currently allocated on the Rust heap by libtelio.
+pub fn get_memory_usage() -> u64 {
+    crate::ALLOC.allocated()
+}
+
 /// Generate a new secret key.
 pub fn generate_secret_key() -> SecretKey {
     SecretKey::gen()
@@ -1386,6 +1391,34 @@ mod tests {
             still_open.is_ok(),
             "caller's tun fd was closed: {:?}",
             still_open
+        );
+    }
+
+    #[test]
+    fn test_get_memory_usage_tracks_allocations() {
+        // Other tests run in parallel and allocate up to tens of MiB at the same time,
+        // so use a much bigger block and check the change only roughly.
+        // with_capacity doesn't touch the pages, so the big block is cheap
+        const BLOCK: usize = 256 * 1024 * 1024;
+        const MIN_CHANGE: u64 = (BLOCK / 2) as u64;
+
+        let before = get_memory_usage();
+        let block: Vec<u8> = std::hint::black_box(Vec::with_capacity(BLOCK));
+        let allocated = get_memory_usage();
+        drop(block);
+        let freed = get_memory_usage();
+
+        assert!(
+            allocated >= before + MIN_CHANGE,
+            "memory usage should grow after allocation: before {}, after {}",
+            before,
+            allocated
+        );
+        assert!(
+            freed + MIN_CHANGE <= allocated,
+            "memory usage should drop after free: allocated {}, freed {}",
+            allocated,
+            freed
         );
     }
 }

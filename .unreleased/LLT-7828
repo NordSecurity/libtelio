@@ -1,0 +1,1 @@
+Add get_memory_usage() reporting the number of bytes currently allocated on the Rust heap by libtelio
