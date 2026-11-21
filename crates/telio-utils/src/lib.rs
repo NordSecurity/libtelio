@@ -73,6 +73,9 @@ pub use bytes_and_timestamps::*;
 pub mod instant;
 pub use instant::*;
 
+/// Tracking of Rust heap allocations for dynamic libraries
+pub mod memtrack;
+
 #[cfg(target_os = "linux")]
 /// Default FWMARK value for libtelio on linux
 pub const LIBTELIO_FWMARK: u32 = 11673110;

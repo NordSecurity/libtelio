@@ -47,5 +47,11 @@ tokio = { workspace = true, features = ["time", "rt", "macros", "test-util"] }
 
 telio-test.workspace = true
 
+[[test]]
+name = "memtrack"
+# Run tests with custom main() in one thread, otherwise other tests
+# could allocate memory at the same time and break the counter checks
+harness = false
+
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ['cfg(kani)'] }
