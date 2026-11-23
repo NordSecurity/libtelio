@@ -1,3 +1,4 @@
+import asyncio
 import random
 from .router import Router, IPProto, IPStack
 from contextlib import asynccontextmanager
@@ -7,6 +8,12 @@ from tests.utils.connection import Connection
 from tests.utils.logger import log
 from tests.utils.process import ProcessExecError
 from typing import AsyncIterator, List, Optional
+
+NETSH_DEFAULT_RETRIES = 2
+NETSH_DEFAULT_MAX_TOTAL_TIME_S = 15.0
+NETSH_DEFAULT_RETRY_DELAY_S = 0.1
+INTERFACE_SETUP_RETRIES = 9
+INTERFACE_SETUP_RETRY_DELAY_S = 1.0
 
 
 class WindowsRouter(Router):
@@ -51,12 +58,53 @@ class WindowsRouter(Router):
         ).execute()
         log.debug("[%s]: %s", self._connection.tag, show_addr_process.get_stdout())
 
-    async def _run_netsh(self, args: List[str], quiet: bool = True):
+    async def _run_netsh(
+        self,
+        args: List[str],
+        quiet: bool = True,
+        retries: int = NETSH_DEFAULT_RETRIES,
+        max_total_time: float = NETSH_DEFAULT_MAX_TOTAL_TIME_S,
+        delay: float = NETSH_DEFAULT_RETRY_DELAY_S,
+    ):
+        attempt_timeout = (max_total_time - retries * delay) / (retries + 1)
+        if attempt_timeout <= 0:
+            raise ValueError(
+                f"max_total_time={max_total_time}s leaves no time for netsh after {retries} delays of {delay}s"
+            )
         try:
-            return await self._connection.create_process(args, quiet=quiet).execute()
-        except ProcessExecError:
+            return await self._run_netsh_with_retries(
+                args, quiet, retries, delay, attempt_timeout
+            )
+        except (ProcessExecError, asyncio.TimeoutError):
             await self._dump_netsh_state()
             raise
+
+    async def _run_netsh_with_retries(
+        self,
+        args: List[str],
+        quiet: bool,
+        retries: int,
+        delay: float,
+        attempt_timeout: float,
+    ):
+        for attempt in range(retries):
+            try:
+                return await self._run_netsh_attempt(args, quiet, attempt_timeout)
+            except (ProcessExecError, asyncio.TimeoutError) as exception:
+                log.debug(
+                    "[%s]: netsh attempt %d/%d failed: %r",
+                    self._connection.tag,
+                    attempt + 1,
+                    retries + 1,
+                    exception,
+                )
+            await asyncio.sleep(delay)
+        return await self._run_netsh_attempt(args, quiet, attempt_timeout)
+
+    async def _run_netsh_attempt(self, args: List[str], quiet: bool, timeout: float):
+        return await asyncio.wait_for(
+            self._connection.create_process(args, quiet=quiet).execute(), timeout
+        )
 
     async def setup_interface(self, addresses: List[str]) -> None:
         assert self._interface_name
@@ -65,8 +113,7 @@ class WindowsRouter(Router):
             addr_proto = self.check_ip_address(address)
 
             # Disable Duplicate Address detection on tunnel interface
-            cmd = CommandGrepper(
-                self._connection,
+            await self._run_netsh(
                 [
                     "netsh",
                     "interface",
@@ -76,14 +123,10 @@ class WindowsRouter(Router):
                     self._interface_name,
                     "dadtransmits=0",
                 ],
-                timeout=self._status_check_timeout_s,
-                allow_process_failure=True,
+                retries=INTERFACE_SETUP_RETRIES,
+                max_total_time=self._status_check_timeout_s,
+                delay=INTERFACE_SETUP_RETRY_DELAY_S,
             )
-            if not await cmd.check_exists("Ok"):
-                await self._dump_netsh_state()
-                raise RuntimeError(
-                    f"Failed to disable Duplicate Address Detection on Tunnel interface {self._interface_name}"
-                )
 
             # Set address
             if addr_proto == IPProto.IPv4:
