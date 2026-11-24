@@ -1,6 +1,10 @@
 //! Upstream resolver list shared by the DNS forwarders
 
-use std::net::SocketAddr;
+use ipnet::Ipv4Net;
+use rand::seq::SliceRandom;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+const NORD_DNS_RANGE: Ipv4Net = Ipv4Net::new_assert(Ipv4Addr::new(103, 86, 96, 0), 22);
 
 /// Upstream resolver list with a generation counter to detect changes
 #[derive(Clone, Debug, Default)]
@@ -15,12 +19,21 @@ impl UpstreamList {
         &self.addrs
     }
 
-    /// Replace the upstream list and bump the generation
-    pub(crate) fn set(&mut self, addrs: Vec<SocketAddr>) {
-        if addrs != self.addrs {
-            self.generation = self.generation.wrapping_add(1);
-            self.addrs = addrs;
+    /// Replace the upstream list if it changed
+    ///
+    /// A list of Nord resolvers is shuffled.
+    /// Any other list keeps its order as priority.
+    pub(crate) fn set(&mut self, mut addrs: Vec<SocketAddr>) {
+        if addrs.iter().all(is_nord_dns) {
+            if sorted(&addrs) == sorted(&self.addrs) {
+                return;
+            }
+            addrs.shuffle(&mut rand::rng());
+        } else if addrs == self.addrs {
+            return;
         }
+        self.addrs = addrs;
+        self.generation = self.generation.wrapping_add(1);
     }
 
     /// Create new upstream cursor for current generation
@@ -30,6 +43,16 @@ impl UpstreamList {
             generation: self.generation,
         }
     }
+}
+
+fn is_nord_dns(addr: &SocketAddr) -> bool {
+    matches!(addr.ip(), IpAddr::V4(ip) if NORD_DNS_RANGE.contains(&ip))
+}
+
+fn sorted(addrs: &[SocketAddr]) -> Vec<SocketAddr> {
+    let mut sorted = addrs.to_vec();
+    sorted.sort_unstable();
+    sorted
 }
 
 /// Cursor over the upstream list for one query attempt
@@ -66,6 +89,7 @@ impl UpstreamCursor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     fn upstream_list(addrs: Vec<SocketAddr>, generation: u64) -> UpstreamList {
         UpstreamList { addrs, generation }
@@ -73,6 +97,10 @@ mod tests {
 
     fn step(next: Option<SocketAddr>, restarted: bool) -> CursorAdvanced {
         CursorAdvanced { next, restarted }
+    }
+
+    fn nord_addr(last_octet: u8) -> SocketAddr {
+        SocketAddr::from(([103, 86, 99, last_octet], 53))
     }
 
     #[test]
@@ -124,6 +152,63 @@ mod tests {
         state.set(vec![a2, a1]);
         assert_eq!(state.generation, 1);
         assert_eq!(state.addrs(), [a2, a1]);
+    }
+
+    #[test]
+    fn set_same_nord_addrs_in_different_order_keeps_generation_and_cursor() {
+        let (a1, a2) = (nord_addr(1), nord_addr(2));
+        let mut state = upstream_list(vec![a1, a2], 0);
+        let mut cursor = state.new_cursor();
+        assert_eq!(cursor.advance(&state), step(Some(a1), false));
+
+        state.set(vec![a2, a1]);
+        assert_eq!(state.generation, 0);
+        assert_eq!(state.addrs(), [a1, a2]);
+        assert_eq!(cursor.advance(&state), step(Some(a2), false));
+    }
+
+    #[test]
+    fn set_same_nord_list_does_not_reshuffle() {
+        let addrs: Vec<_> = (1..=8).map(nord_addr).collect();
+        let mut state = UpstreamList::default();
+        state.set(addrs.clone());
+        let shuffled = state.addrs().to_vec();
+
+        state.set(addrs);
+        assert_eq!(state.addrs(), shuffled);
+        assert_eq!(state.generation, 1);
+    }
+
+    #[test]
+    fn set_shuffles_new_nord_list() {
+        let (a1, a2) = (nord_addr(1), nord_addr(2));
+        let firsts: HashSet<_> = (0..64)
+            .map(|_| {
+                let mut state = UpstreamList::default();
+                state.set(vec![a1, a2]);
+                state.addrs()[0]
+            })
+            .collect();
+        assert_eq!(firsts, HashSet::from([a1, a2]));
+    }
+
+    #[test]
+    fn set_keeps_order_of_mixed_list() {
+        let mut addrs: Vec<_> = (1..=4).map(nord_addr).collect();
+        addrs.push("10.0.0.1:53".parse().unwrap());
+        let mut state = UpstreamList::default();
+        state.set(addrs.clone());
+        assert_eq!(state.addrs(), addrs);
+    }
+
+    #[test]
+    fn nord_dns_range_bounds() {
+        let is_nord = |s: &str| is_nord_dns(&s.parse().unwrap());
+        assert!(is_nord("103.86.96.0:53"));
+        assert!(is_nord("103.86.99.255:53"));
+        assert!(!is_nord("103.86.95.255:53"));
+        assert!(!is_nord("103.86.100.0:53"));
+        assert!(!is_nord("[2001:db8::1]:53"));
     }
 
     #[test]

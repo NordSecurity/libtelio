@@ -3,10 +3,11 @@
 //! This module provides a layer for forwarding DNS queries to upstream resolvers.
 //! Multiple queries can be in flight concurrently.
 //!
-//! Upstream resolvers are tried in order they are set.
+//! A list of Nord resolvers is shuffled when it changes.
+//! Each query walks the list in order.
 //! If sending fails or no response is received after the set timeout,
 //! the next upstream resolver is tried.
-//! A truncated response is retried over TCP against the same upstream
+//! A truncated response is retried over TCP against the same upstream.
 
 use crate::{
     bind_tun::bind_to_tun,
@@ -767,7 +768,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn forward_query_falls_back_to_second_upstream() {
-        let (blackhole_addr, _bh_handle) = spawn_stub(StubBehavior::BlackHole).await;
+        let (blackhole_addr, bh_handle) = spawn_stub(StubBehavior::BlackHole).await;
         let (reply_addr, _reply_handle) = spawn_stub(StubBehavior::Echo).await;
 
         let (forwarder, _upstreams) =
@@ -777,6 +778,7 @@ pub(crate) mod tests {
         let request = make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD);
         let result = forwarder.query(&request).await.unwrap();
 
+        assert!(bh_handle.is_finished(), "blackhole tried first");
         assert_eq!(get_dns_id(&result).unwrap(), TEST_PACKET_ID);
         assert_eq!(&result[2..], TEST_DNS_PAYLOAD);
     }
@@ -796,7 +798,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn send_failure_after_timeout_falls_back_to_next_upstream() {
-        let (blackhole_addr, _bh_handle) = spawn_stub(StubBehavior::BlackHole).await;
+        let (blackhole_addr, bh_handle) = spawn_stub(StubBehavior::BlackHole).await;
         let (reply_addr, _reply_handle) = spawn_stub(StubBehavior::Echo).await;
         let (forwarder, _upstreams) = new_forwarder_with_timeout(
             vec![
@@ -811,6 +813,7 @@ pub(crate) mod tests {
         let request = make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD);
         let result = forwarder.query(&request).await.unwrap();
 
+        assert!(bh_handle.is_finished(), "blackhole tried first");
         assert_eq!(get_dns_id(&result).unwrap(), TEST_PACKET_ID);
         assert_eq!(&result[2..], TEST_DNS_PAYLOAD);
     }
@@ -906,7 +909,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn tcp_retry_goes_to_upstream_that_truncated() {
-        let (blackhole_addr, _bh) = spawn_stub(StubBehavior::BlackHole).await;
+        let (blackhole_addr, bh_handle) = spawn_stub(StubBehavior::BlackHole).await;
         let (addr, _udp, _tcp) = spawn_udp_tcp_stub(
             StubBehavior::EchoTruncated,
             TcpStubBehavior::Echo { pad_to: 1500 },
@@ -918,6 +921,7 @@ pub(crate) mod tests {
         let request = make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD);
         let result = forwarder.query(&request).await.unwrap();
 
+        assert!(bh_handle.is_finished(), "blackhole tried first");
         assert_eq!(result.len(), 1500);
     }
 
