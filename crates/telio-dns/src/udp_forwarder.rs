@@ -4,8 +4,8 @@
 //! Multiple queries can be in flight concurrently.
 //!
 //! Upstream resolvers are tried in order they are set.
-//! If no response is received after the set timeout, the next
-//! upstream resolver is tried.
+//! If sending fails or no response is received after the set timeout,
+//! the next upstream resolver is tried.
 //! A truncated response is retried over TCP against the same upstream
 
 use crate::{
@@ -42,7 +42,7 @@ macro_rules! send_channel_response {
 /// DNS query forwarder bound to the tunnel interface
 ///
 /// Forwards raw DNS queries to upstream resolvers.
-/// Next upstream resolver is tried if no response is received after `timeout`.
+/// Next upstream resolver is tried if sending fails or no response is received after `timeout`.
 #[derive(Clone, Debug)]
 pub(crate) struct UdpForwarder {
     tx: mpsc::Sender<ForwardQuery>,
@@ -274,22 +274,21 @@ impl UdpForwarder {
                 }
             };
 
-        let (upstream_addr, upstream_cursor) = {
-            let state = upstreams.lock().await;
-            let mut cursor = state.new_cursor();
-            match cursor.advance(&state).next {
-                Some(addr) => (addr, cursor),
-                None => {
-                    send_channel_response!(msg.respond_to, Err(ForwardError::NoUpstreams));
-                    return;
-                }
+        let mut upstream_cursor = upstreams.lock().await.new_cursor();
+        let upstream_addr = match Self::send_to_next_upstream(
+            socket,
+            upstreams,
+            &mut upstream_cursor,
+            &rewritten_bytes,
+        )
+        .await
+        {
+            Ok(addr) => addr,
+            Err(e) => {
+                send_channel_response!(msg.respond_to, Err(e));
+                return;
             }
         };
-
-        if let Err(e) = socket.send_to(&rewritten_bytes, upstream_addr).await {
-            send_channel_response!(msg.respond_to, Err(ForwardError::SendFailed(e)));
-            return;
-        }
 
         pending.insert(
             internal_id,
@@ -410,35 +409,60 @@ impl UdpForwarder {
                 continue;
             }
 
-            let advance = {
-                let current_state = upstreams.lock().await;
-                entry.upstream_cursor.advance(&current_state)
-            };
-
-            if advance.restarted {
-                telio_log_debug!(
-                    "Upstreams changed for request: {internal_id}, restarting from index 0"
-                );
-            }
-
-            match advance.next {
-                Some(next_upstream) => {
+            match Self::send_to_next_upstream(
+                socket,
+                upstreams,
+                &mut entry.upstream_cursor,
+                &entry.query_bytes,
+            )
+            .await
+            {
+                Ok(next_upstream) => {
                     telio_log_debug!(
                         "Upstream timed out for request: {internal_id}, trying next: {next_upstream}"
                     );
                     entry.deadline = Instant::now() + timeout;
                     entry.sent_to = next_upstream;
-
-                    if let Err(e) = socket.send_to(&entry.query_bytes, next_upstream).await {
-                        send_channel_response!(entry.respond_to, Err(ForwardError::SendFailed(e)));
-                        continue;
-                    }
-
                     pending.insert(internal_id, entry);
                 }
-                None => {
+                Err(_) => {
                     telio_log_warn!("All upstreams exhausted for request: {internal_id}");
                     send_channel_response!(entry.respond_to, Err(ForwardError::Timeout));
+                }
+            }
+        }
+    }
+
+    /// Send to the next upstream from `cursor`
+    async fn send_to_next_upstream(
+        socket: &UdpSocket,
+        upstreams: &Mutex<UpstreamList>,
+        cursor: &mut UpstreamCursor,
+        query: &[u8],
+    ) -> Result<SocketAddr, ForwardError> {
+        let mut last_err = None;
+        loop {
+            let advance = {
+                let state = upstreams.lock().await;
+                cursor.advance(&state)
+            };
+
+            if advance.restarted {
+                telio_log_debug!("Upstreams changed, restarting");
+            }
+
+            let Some(upstream) = advance.next else {
+                return Err(match last_err {
+                    Some(e) => ForwardError::SendFailed(e),
+                    None => ForwardError::NoUpstreams,
+                });
+            };
+
+            match socket.send_to(query, upstream).await {
+                Ok(_) => return Ok(upstream),
+                Err(e) => {
+                    telio_log_debug!("Failed to send query to {upstream}, trying next: {e}");
+                    last_err = Some(e);
                 }
             }
         }
@@ -463,6 +487,8 @@ pub(crate) mod tests {
     pub(crate) const TEST_DNS_PAYLOAD: &[u8; 13] = b"query-payload";
     // Timeout value used for BlackHole tests
     pub(crate) const BLACKHOLE_QUERY_TIMEOUT: Duration = Duration::from_millis(50);
+    /// `send_to` rejects port 0
+    const UNSENDABLE_UPSTREAM: &str = "127.0.0.1:0";
 
     pub(crate) fn make_dns_packet(id: u16, payload: &[u8]) -> Vec<u8> {
         let mut packet = id.to_be_bytes().to_vec();
@@ -747,6 +773,40 @@ pub(crate) mod tests {
         let (forwarder, _upstreams) =
             new_forwarder_with_timeout(vec![blackhole_addr, reply_addr], BLACKHOLE_QUERY_TIMEOUT)
                 .await;
+
+        let request = make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD);
+        let result = forwarder.query(&request).await.unwrap();
+
+        assert_eq!(get_dns_id(&result).unwrap(), TEST_PACKET_ID);
+        assert_eq!(&result[2..], TEST_DNS_PAYLOAD);
+    }
+
+    #[tokio::test]
+    async fn send_failure_falls_back_to_next_upstream() {
+        let (reply_addr, _reply_handle) = spawn_stub(StubBehavior::Echo).await;
+        let (forwarder, _upstreams) =
+            new_forwarder(vec![UNSENDABLE_UPSTREAM.parse().unwrap(), reply_addr]).await;
+
+        let request = make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD);
+        let result = forwarder.query(&request).await.unwrap();
+
+        assert_eq!(get_dns_id(&result).unwrap(), TEST_PACKET_ID);
+        assert_eq!(&result[2..], TEST_DNS_PAYLOAD);
+    }
+
+    #[tokio::test]
+    async fn send_failure_after_timeout_falls_back_to_next_upstream() {
+        let (blackhole_addr, _bh_handle) = spawn_stub(StubBehavior::BlackHole).await;
+        let (reply_addr, _reply_handle) = spawn_stub(StubBehavior::Echo).await;
+        let (forwarder, _upstreams) = new_forwarder_with_timeout(
+            vec![
+                blackhole_addr,
+                UNSENDABLE_UPSTREAM.parse().unwrap(),
+                reply_addr,
+            ],
+            BLACKHOLE_QUERY_TIMEOUT,
+        )
+        .await;
 
         let request = make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD);
         let result = forwarder.query(&request).await.unwrap();
