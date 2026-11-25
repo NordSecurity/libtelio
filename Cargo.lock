@@ -2683,7 +2683,7 @@ dependencies = [
 [[package]]
 name = "neptun"
 version = "2.2.3"
-source = "git+https://github.com/NordSecurity/neptun.git?tag=v3.0.7#1ac866488c720a66490b6548b62c1cd53743d9f0"
+source = "git+https://github.com/NordSecurity/neptun.git?tag=v3.0.8#2a8f5bea15dfbcf789c45c18e93a8b650bf3e56f"
 dependencies = [
  "aead 0.6.1",
  "base64 0.23.1",
@@ -4809,6 +4809,7 @@ dependencies = [
  "rstest",
  "telio-crypto",
  "telio-model",
+ "telio-sockets",
  "telio-utils",
  "telio-wg",
  "thiserror 2.0.21",
