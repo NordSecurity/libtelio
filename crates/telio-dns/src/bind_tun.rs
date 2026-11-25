@@ -12,7 +12,7 @@ pub use any::set_should_bind;
 #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "tvos")))]
 pub(crate) use any::{bind_to_tun, set_tun};
 
-#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos", doc))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos", docsrs))]
 #[cfg_attr(
     docsrs,
     doc(cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos")))
