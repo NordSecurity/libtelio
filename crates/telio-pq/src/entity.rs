@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -28,7 +29,8 @@ pub struct Entity {
     features: FeaturePostQuantumVPN,
     sockets: Arc<telio_sockets::SocketPool>,
     chan: chan::Tx<super::Event>,
-    peer: Mutex<Option<Peer>>,
+    peer: Arc<Mutex<Option<Peer>>>,
+    rekey_event: Arc<tokio::sync::Notify>,
 }
 
 impl crate::PostQuantum for Entity {
@@ -41,17 +43,68 @@ impl crate::PostQuantum for Entity {
     }
 }
 
+async fn filter(
+    pq_peer: Arc<Mutex<Option<Peer>>>,
+    mut last_handshake_times: tokio::sync::watch::Receiver<
+        HashMap<telio_model::PublicKey, Option<Duration>>,
+    >,
+    threshold: Duration,
+    rekey_notify: Arc<tokio::sync::Notify>,
+) {
+    let mut last_below = true;
+    telio_log_debug!("XXX waiting for last handshake times updates");
+    loop {
+        last_handshake_times.changed().await.unwrap();
+        let times: HashMap<_, _> = last_handshake_times.borrow().clone();
+        let pq_peer = pq_peer.lock().as_ref().map(|p| p.pubkey);
+        telio_log_debug!("XXX for {pq_peer:?} received new last handshake times: {times:?}");
+
+        for (pk, d) in times {
+            if Some(pk) == pq_peer {
+                telio_log_debug!("XXX pq_peer: {pk} -> {d:?}");
+                if let Some(d) = d {
+                    if d > threshold {
+                        if last_below {
+                            telio_log_debug!("XXX start PQ rekey!");
+                            rekey_notify.notify_waiters();
+                        } else {
+                            telio_log_debug!("XXX subsequent to be ignored");
+                        }
+                        last_below = false
+                    }
+                    if d <= threshold && !last_below {
+                        telio_log_debug!("XXX there was a WG handshake in between?");
+                        last_below = true;
+                    }
+                }
+            }
+        }
+    }
+}
+
 impl Entity {
     pub fn new(
         features: FeaturePostQuantumVPN,
         sockets: Arc<telio_sockets::SocketPool>,
         chan: chan::Tx<super::Event>,
+        last_handshake_times: tokio::sync::watch::Receiver<
+            HashMap<telio_model::PublicKey, Option<Duration>>,
+        >,
     ) -> Self {
+        let peer = Arc::new(Mutex::new(None));
+        let rekey_event = Arc::new(tokio::sync::Notify::new());
+        let _ = tokio::spawn(filter(
+            peer.clone(),
+            last_handshake_times,
+            Duration::from_secs(90),
+            rekey_event.clone(),
+        ));
         Self {
             features,
             sockets,
             chan,
-            peer: Mutex::new(None),
+            peer,
+            rekey_event,
         }
     }
 
@@ -139,6 +192,7 @@ impl Entity {
                 p.pubkey,
                 &self.features,
                 p.pq_upgrader_ip,
+                self.rekey_event.clone(),
             );
         }
     }
@@ -202,6 +256,7 @@ impl Entity {
                 peer,
                 &self.features,
                 pq_upgrader_ip,
+                self.rekey_event.clone(),
             ),
             keys: None,
             last_key_fetch_ts: None,

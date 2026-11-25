@@ -1298,6 +1298,9 @@ impl Runtime {
             .enable_dynamic_wg_nt_control
             .then(|| meshnet_on_checker(meshnet_on.clone()));
 
+        let (last_handshake_times_tx, last_handshake_times_rx) =
+            tokio::sync::watch::channel(HashMap::<PublicKey, Option<Duration>>::default());
+
         // tests runtime use wg::MockedAdapter
         cfg_if! {
             if #[cfg(not(test))] {
@@ -1313,6 +1316,7 @@ impl Runtime {
                         listen_port_events: wg_listen_port_events.tx,
                         analytics_tx: analytics_ch.clone(),
                         libtelio_wide_event_publisher: Some(libtelio_wide_event_publisher.clone()),
+                        last_handshake_times: last_handshake_times_tx,
                     },
                     wg::Config {
                         adapter: config.adapter.clone(),
@@ -1450,6 +1454,7 @@ impl Runtime {
             features.post_quantum_vpn,
             socket_pool.clone(),
             post_quantum.tx,
+            last_handshake_times_rx,
         );
 
         let polling_interval = interval(Duration::from_secs(5));

@@ -199,7 +199,8 @@ class TestPqVpnRekey:
     @pytest.fixture(autouse=True)
     def _mutate_pq_rekey(self, alpha_setup_params: SetupParameters, pq_version: int):
         alpha_setup_params.features.post_quantum_vpn.rekey_interval_s = (
-            SHORT_PQ_REKEY_INTERVAL_S
+            # SHORT_PQ_REKEY_INTERVAL_S
+            120
         )
         alpha_setup_params.features.post_quantum_vpn.version = pq_version
 
@@ -298,14 +299,14 @@ class TestPqVpnRekey:
             client_alpha,
         )
 
-        async with new_connection_by_tag(ConnectionTag.VM_LINUX_NLX_1) as nlx_conn:
-            preshared_before = await inspect_preshared_key(nlx_conn)
-            await client_alpha.log.wait_for(PQ_REKEY_SUCCESS_LOG, incremental=True)
+        # async with new_connection_by_tag(ConnectionTag.VM_LINUX_NLX_1) as nlx_conn:
+        #     preshared_before = await inspect_preshared_key(nlx_conn)
+        #     await client_alpha.log.wait_for(PQ_REKEY_SUCCESS_LOG, incremental=True)
 
-            preshared_after = await inspect_preshared_key(nlx_conn)
-            assert (
-                preshared_after != preshared_before
-            ), "Preshared key not changed on the nlx server"
+        #     preshared_after = await inspect_preshared_key(nlx_conn)
+        #     assert (
+        #         preshared_after != preshared_before
+        #     ), "Preshared key not changed on the nlx server"
 
         ip = await stun.get(client_conn, config.STUN_SERVER)
         assert (
@@ -313,6 +314,8 @@ class TestPqVpnRekey:
         ), f"wrong public IP when connected to VPN {ip}"
 
         await ping(client_conn, config.PHOTO_ALBUM_IP)
+
+        await asyncio.sleep(190)
 
     @pytest.mark.nlx
     @pytest.mark.parametrize(

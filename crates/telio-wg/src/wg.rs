@@ -149,6 +149,9 @@ pub struct Io {
     pub libtelio_wide_event_publisher: Option<mc_chan::Tx<Box<LibtelioEvent>>>,
     /// Channel to report WireGuard listen port changes
     pub listen_port_events: Tx<Option<u16>>,
+
+    /// todo
+    pub last_handshake_times: tokio::sync::watch::Sender<HashMap<PublicKey, Option<Duration>>>,
 }
 
 /// Keepalive packets size
@@ -166,6 +169,7 @@ struct State {
     interface: Interface,
     event: Tx<Box<Event>>,
     listen_port_event: Tx<Option<u16>>,
+    last_handshake_times_event: tokio::sync::watch::Sender<HashMap<PublicKey, Option<Duration>>>,
     analytics_tx: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
     // Detecting unexpected driver failures, such as a malicious removal
     // We won't be notified of any errors, but a periodic call to get_config_uapi() will return a Win32 error code != 0.
@@ -320,6 +324,7 @@ impl DynamicWg {
                 interface: Default::default(),
                 event: io.events,
                 listen_port_event: io.listen_port_events,
+                last_handshake_times_event: io.last_handshake_times,
                 analytics_tx: io.analytics_tx,
                 link_detection,
                 uapi_fail_counter: 0,
@@ -859,6 +864,8 @@ impl State {
                 self.polling_period_after_update,
             );
         }
+
+        let mut handshake_times: HashMap<PublicKey, Option<Duration>> = HashMap::default();
         for (pk, peer) in &mut to.peers {
             match self.stats.get_mut(pk) {
                 Some(stats) => match stats.lock().as_mut() {
@@ -884,7 +891,17 @@ impl State {
                 }
             }
             peer.time_since_last_rx = self.time_since_last_rx(*pk);
+            handshake_times.insert(*pk, peer.time_since_last_handshake);
         }
+
+        telio_log_debug!("XXX sending new last_handshake_times event: {handshake_times:?}");
+        self.last_handshake_times_event.send_if_modified(|current| {
+            let ret = *current != handshake_times;
+            if ret {
+                *current = handshake_times;
+            }
+            ret
+        });
         self.stats.retain(|pk, _| to.peers.contains_key(pk));
 
         // Diff and report events
@@ -1244,12 +1261,16 @@ pub mod tests {
                 })
             });
 
+        let (last_handshake_times_tx, last_handshake_times_rx) =
+            tokio::sync::watch::channel(Default::default());
+
         let wg = DynamicWg::start_with(
             Io {
                 events: events_ch.tx.clone(),
                 analytics_tx: analytics_ch.clone(),
                 libtelio_wide_event_publisher: None,
                 listen_port_events: listen_port_ch.tx,
+                last_handshake_times: last_handshake_times_tx,
             },
             Box::new(adapter.clone()),
             None,
@@ -1479,6 +1500,7 @@ pub mod tests {
             analytics_tx: None,
             libtelio_wide_event_publisher: None,
             listen_port_events: Chan::default().tx,
+            last_handshake_times: tokio::sync::watch::channel(Default::default()).0,
         };
         let result = DynamicWg::start(
             io,

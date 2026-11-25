@@ -25,6 +25,7 @@ impl ConnKeyRotation {
         peer: telio_crypto::PublicKey,
         features: &FeaturePostQuantumVPN,
         pq_upgrader_ip: Option<Ipv4Addr>,
+        rekey_event: Arc<tokio::sync::Notify>,
     ) -> Self {
         telio_log_debug!("Starting PQ task");
 
@@ -79,10 +80,12 @@ impl ConnKeyRotation {
                 .await;
 
             telio_log_debug!("Rekey interval: {}s", rekey_interval.as_secs());
-            let mut ticker = SuspendAwareTicker::new_after(rekey_interval, rekey_interval);
+            // let mut ticker = SuspendAwareTicker::new_after(rekey_interval, rekey_interval);
 
             loop {
-                ticker.tick().await;
+                // ticker.tick().await;
+                rekey_event.notified().await;
+                telio_log_debug!("XXX will fetch keys");
 
                 // Dylint is unhappy about the `rekey` future size
                 // and asks for using `Box::pin` to move it on the heap
@@ -121,14 +124,14 @@ impl ConnKeyRotation {
                     }
                     Ok(Err(err)) => {
                         telio_log_warn!("Failed to perform PQ rekey: {err}");
-                        ticker.reset_after(request_retry);
+                        // ticker.reset_after(request_retry);
                     }
                     Err(_timeout) => {
                         telio_log_warn!(
                             "Failed to perform PQ rekey: TIMEOUT({}s)",
                             request_retry.as_secs()
                         );
-                        ticker.reset_immediately();
+                        // ticker.reset_immediately();
                     }
                 }
             }
