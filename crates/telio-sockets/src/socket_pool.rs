@@ -229,10 +229,6 @@ impl MakeExternalNeptun for SocketPool {
     fn make_external(&self, socket: NativeSocket) {
         let _ = self.protect.make_external(socket);
     }
-
-    fn clean(&self, socket: NativeSocket) {
-        self.protect.clean(socket);
-    }
 }
 
 #[cfg(test)]
