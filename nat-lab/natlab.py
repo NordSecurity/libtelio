@@ -308,6 +308,13 @@ def start(skip_keywords=None, force_recreate=False, services_to_start=None):
     services = services_to_build()
     if pull_base_image() == BaseImageSource.REGISTRY:
         services.remove(BASE_IMAGE_SERVICE)
+    elif "GITLAB_CI" in os.environ:
+        # TEMPORARY: drop the deps image and build cache, which may reference
+        # overlay2 layers missing from the persisted data-root
+        registry = os.environ.get(CONTAINER_REGISTRY_ENV, "")
+        deps_image = f"{registry}/nord-projects/nordvpn/infra/llt/automation/docker/libtelio/nat_lab:{LIBTELIO_ENV_NAT_LAB_DEPS_TAG}"
+        command_succeeds(["docker", "rmi", "-f", deps_image])
+        command_succeeds(["docker", "builder", "prune", "-af"])
 
     # One build at a time: parallel builds can crash dockerd (moby/moby#48564)
     for service in services:
