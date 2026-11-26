@@ -1,7 +1,7 @@
 //! Upstream resolver list shared by the DNS forwarders
 
 use ipnet::Ipv4Net;
-use rand::seq::SliceRandom;
+use rand::{seq::SliceRandom, Rng};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 const NORD_DNS_RANGE: Ipv4Net = Ipv4Net::new_assert(Ipv4Addr::new(103, 86, 96, 0), 22);
@@ -23,12 +23,16 @@ impl UpstreamList {
     ///
     /// A list of Nord resolvers is shuffled.
     /// Any other list keeps its order as priority.
-    pub(crate) fn set(&mut self, mut addrs: Vec<SocketAddr>) {
+    pub(crate) fn set(&mut self, addrs: Vec<SocketAddr>) {
+        self.set_with_rng(addrs, &mut rand::rng());
+    }
+
+    fn set_with_rng<R: Rng + ?Sized>(&mut self, mut addrs: Vec<SocketAddr>, rng: &mut R) {
         if addrs.iter().all(is_nord_dns) {
             if sorted(&addrs) == sorted(&self.addrs) {
                 return;
             }
-            addrs.shuffle(&mut rand::rng());
+            addrs.shuffle(rng);
         } else if addrs == self.addrs {
             return;
         }
@@ -89,6 +93,7 @@ impl UpstreamCursor {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use rand::{rngs::StdRng, SeedableRng};
     use std::collections::HashSet;
 
     fn upstream_list(addrs: Vec<SocketAddr>, generation: u64) -> UpstreamList {
@@ -185,15 +190,17 @@ pub(crate) mod tests {
 
     #[test]
     fn set_shuffles_new_nord_list() {
-        let (a1, a2) = (nord_addr(1), nord_addr(2));
-        let firsts: HashSet<_> = (0..64)
+        let addrs: Vec<_> = (1..=4).map(nord_addr).collect();
+        let mut rng = StdRng::seed_from_u64(0);
+        // in 256 runs, each shuffled nord_addr should appear first at least once
+        let firsts: HashSet<_> = (0..256)
             .map(|_| {
                 let mut state = UpstreamList::default();
-                state.set(vec![a1, a2]);
+                state.set_with_rng(addrs.clone(), &mut rng);
                 state.addrs()[0]
             })
             .collect();
-        assert_eq!(firsts, HashSet::from([a1, a2]));
+        assert_eq!(firsts, addrs.iter().copied().collect());
     }
 
     #[test]
