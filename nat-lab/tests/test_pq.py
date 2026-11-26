@@ -197,12 +197,13 @@ class TestPqVpnRekey:
     """Tests using PQ VPN with version + rekey mutation."""
 
     @pytest.fixture(autouse=True)
-    def _mutate_pq_rekey(self, alpha_setup_params: SetupParameters, pq_version: int):
+    def _mutate_pq_rekey(self, alpha_setup_params: SetupParameters, pq_version: int, rekey_attached_to_wg_handshake: bool):
         alpha_setup_params.features.post_quantum_vpn.rekey_interval_s = (
             # SHORT_PQ_REKEY_INTERVAL_S
-            120
+            30
         )
         alpha_setup_params.features.post_quantum_vpn.version = pq_version
+        alpha_setup_params.features.post_quantum_vpn.rekey_attached_to_wg_handshake = rekey_attached_to_wg_handshake
 
     @pytest.mark.nlx
     @pytest.mark.parametrize(
@@ -281,6 +282,10 @@ class TestPqVpnRekey:
         "pq_version",
         PQ_VERSIONS,
     )
+    @pytest.mark.parametrize(
+        "rekey_attached_to_wg_handshake",
+        [True,False],
+    )
     async def test_pq_vpn_rekey(
         self,
         alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
@@ -315,7 +320,7 @@ class TestPqVpnRekey:
 
         await ping(client_conn, config.PHOTO_ALBUM_IP)
 
-        await asyncio.sleep(190)
+        await asyncio.sleep(120)
 
     @pytest.mark.nlx
     @pytest.mark.parametrize(

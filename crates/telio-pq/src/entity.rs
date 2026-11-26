@@ -93,12 +93,14 @@ impl Entity {
     ) -> Self {
         let peer = Arc::new(Mutex::new(None));
         let rekey_event = Arc::new(tokio::sync::Notify::new());
-        let _ = tokio::spawn(filter(
-            peer.clone(),
-            last_handshake_times,
-            Duration::from_secs(90),
-            rekey_event.clone(),
-        ));
+        if features.rekey_attached_to_wg_handshake {
+            let _ = tokio::spawn(filter(
+                peer.clone(),
+                last_handshake_times,
+                Duration::from_secs(features.rekey_interval_s.into()),
+                rekey_event.clone(),
+            ));
+        }
         Self {
             features,
             sockets,

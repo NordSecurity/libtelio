@@ -29,6 +29,7 @@ impl ConnKeyRotation {
     ) -> Self {
         telio_log_debug!("Starting PQ task");
 
+        let rekey_attached_to_wg_handshake = features.rekey_attached_to_wg_handshake;
         let mut rekey_interval = features.rekey_interval_s;
         if rekey_interval == 0 {
             rekey_interval = 1;
@@ -80,11 +81,24 @@ impl ConnKeyRotation {
                 .await;
 
             telio_log_debug!("Rekey interval: {}s", rekey_interval.as_secs());
-            // let mut ticker = SuspendAwareTicker::new_after(rekey_interval, rekey_interval);
+            let mut ticker = SuspendAwareTicker::new_after(rekey_interval, rekey_interval);
+
+            let event: std::pin::Pin<
+                Box<
+                    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+                        + Send,
+                >,
+            > = if rekey_attached_to_wg_handshake {
+                Box::pin(|| Box::pin(rekey_event.notified()))
+            } else {
+                Box::pin(|| Box::pin(ticker.tick()))
+            };
 
             loop {
                 // ticker.tick().await;
-                rekey_event.notified().await;
+                // rekey_event.notified().await;
+                let () = event().await;
+
                 telio_log_debug!("XXX will fetch keys");
 
                 // Dylint is unhappy about the `rekey` future size

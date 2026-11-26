@@ -485,6 +485,10 @@ pub struct FeaturePostQuantumVPN {
     #[default = 90]
     pub rekey_interval_s: u32,
 
+    /// Should PQ re-key be started at `rekey_interval_s` after last WG handshake
+    #[default = false]
+    pub rekey_attached_to_wg_handshake: bool,
+
     /// Post-quantum protocol version, currently supported versions: 1, 2
     #[default = 1]
     pub version: u32,
@@ -770,6 +774,7 @@ mod tests {
             "post_quantum_vpn": {
                 "handshake_retry_interval_s": 15,
                 "rekey_interval_s": 16,
+                "rekey_attached_to_wg_handshake": true,
                 "version": 1
             },
             "link_detection": {
@@ -874,6 +879,7 @@ mod tests {
                         handshake_retry_interval_s: 15,
                         rekey_interval_s: 16,
                         version: 1,
+                        rekey_attached_to_wg_handshake: true,
                     },
                     link_detection: Some(FeatureLinkDetection {
                         rtt_seconds: 17,
@@ -1021,6 +1027,15 @@ mod tests {
         #[test]
         fn test_post_quantum_vpn_version_default() {
             assert_json!(r#"{"post_quantum_vpn": {}}"#, 1, post_quantum_vpn.version);
+        }
+
+        #[test]
+        fn test_post_quantum_vpn_rekey_attached_to_wg_handshake_default() {
+            assert_json!(
+                r#"{"post_quantum_vpn": {}}"#,
+                false,
+                post_quantum_vpn.rekey_attached_to_wg_handshake
+            );
         }
 
         #[test]

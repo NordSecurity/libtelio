@@ -1,3 +1,5 @@
+use parking_lot::Mutex;
+
 /// A suspend-aware interval ticker.
 ///
 /// `tokio::time::Instant` and `std::time::Instant` are not suspend aware, which means
@@ -14,7 +16,7 @@
 pub struct SuspendAwareTicker {
     period: tokio::time::Duration,
     /// The wall-clock deadline for the next tick, measured with a suspend-aware clock.
-    next: crate::Instant,
+    next: Mutex<crate::Instant>,
 }
 
 impl SuspendAwareTicker {
@@ -27,23 +29,24 @@ impl SuspendAwareTicker {
     pub fn new_after(offset: tokio::time::Duration, period: tokio::time::Duration) -> Self {
         Self {
             period,
-            next: crate::Instant::now() + offset,
+            next: Mutex::new(crate::Instant::now() + offset),
         }
     }
 
     /// Wait until the next tick, then advance the deadline
-    pub async fn tick(&mut self) {
-        crate::sleep_until(self.next).await;
-        self.next = crate::Instant::now() + self.period;
+    pub async fn tick(&self) {
+        let v = { *self.next.lock() };
+        crate::sleep_until(v).await;
+        *self.next.lock() = crate::Instant::now() + self.period;
     }
 
     /// Reset the ticker so the next tick happens `offset` time from now
-    pub fn reset_after(&mut self, offset: tokio::time::Duration) {
-        self.next = crate::Instant::now() + offset;
+    pub fn reset_after(&self, offset: tokio::time::Duration) {
+        *self.next.lock() = crate::Instant::now() + offset;
     }
 
     /// Reset the ticker so the next tick happens immediately
-    pub fn reset_immediately(&mut self) {
-        self.next = crate::Instant::now();
+    pub fn reset_immediately(&self) {
+        *self.next.lock() = crate::Instant::now();
     }
 }
