@@ -82,22 +82,16 @@ impl ConnKeyRotation {
 
             telio_log_debug!("Rekey interval: {}s", rekey_interval.as_secs());
             let mut ticker = SuspendAwareTicker::new_after(rekey_interval, rekey_interval);
-
-            let event: std::pin::Pin<
-                Box<
-                    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
-                        + Send,
-                >,
-            > = if rekey_attached_to_wg_handshake {
-                Box::pin(|| Box::pin(rekey_event.notified()))
-            } else {
-                Box::pin(|| Box::pin(ticker.tick()))
-            };
+            // After a failed rekey, retries are driven by `ticker` in both modes until a
+            // rekey succeeds; only then does the WG-handshake trigger take over again.
+            let mut retrying = false;
 
             loop {
-                // ticker.tick().await;
-                // rekey_event.notified().await;
-                let () = event().await;
+                if rekey_attached_to_wg_handshake && !retrying {
+                    rekey_event.notified().await;
+                } else {
+                    ticker.tick().await;
+                }
 
                 telio_log_debug!("XXX will fetch keys");
 
@@ -128,6 +122,7 @@ impl ConnKeyRotation {
                 match tokio::time::timeout(request_retry, rekey).await {
                     Ok(Ok(key)) => {
                         telio_log_debug!("Successful PQ REKEY");
+                        retrying = false;
                         wg_keys.pq_shared = key.clone();
 
                         // The channel is allways open during the library operation.
@@ -138,14 +133,16 @@ impl ConnKeyRotation {
                     }
                     Ok(Err(err)) => {
                         telio_log_warn!("Failed to perform PQ rekey: {err}");
-                        // ticker.reset_after(request_retry);
+                        ticker.reset_after(request_retry);
+                        retrying = true;
                     }
                     Err(_timeout) => {
                         telio_log_warn!(
                             "Failed to perform PQ rekey: TIMEOUT({}s)",
                             request_retry.as_secs()
                         );
-                        // ticker.reset_immediately();
+                        ticker.reset_immediately();
+                        retrying = true;
                     }
                 }
             }

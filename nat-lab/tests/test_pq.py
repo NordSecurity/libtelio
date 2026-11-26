@@ -45,10 +45,11 @@ WG_REKEY_TIMEOUT_S = 5
 # Short, so that a few PQ rekeys fit in the healthy-tunnel timing test.
 HEALTHY_PQ_REKEY_INTERVAL_S = 10
 HEALTHY_PQ_REKEY_COUNT = 3
-# In the new mode the rekey after a failure lands at ~WG_REKEY_AFTER_TIME_S + this,
-# which must stay well below 180s: after that long without a successful rekey libtelio
-# restarts the whole PQ entity, which would hide the behaviour under test.
+# Leaves time to block the PQ upgrader before the first rekey attempt.
 FAILED_PQ_REKEY_INTERVAL_S = 20
+# Fits several times into WireGuard's 120s rekey cycle: the fixed timer rekeys a few
+# times per WireGuard handshake, the new mode once, at the 30s mark.
+KERNEL_WG_PQ_REKEY_INTERVAL_S = 30
 # Allowed delay between "rekey_interval_s since the last handshake" and seeing the new
 # preshared key on the server: libtelio polls WireGuard every second, nlx reports
 # handshakes with 1s resolution, plus the rekey round trip and our sampling period.
@@ -1054,9 +1055,12 @@ class NlxPeerObserver:
         self._sampler: Optional[asyncio.Task] = None
         self.wg_handshakes: list[int] = []
         self.pq_rekeys: list[PqRekey] = []
+        # NLX clock (unix seconds) of the most recent sample
+        self.last_sample_at = 0.0
 
     async def _sample(self) -> None:
         now, peers = await _read_nlx_peers(self._nlx_conn)
+        self.last_sample_at = now
         assert self._public_key in peers, f"peer {self._public_key} left NLX"
         preshared_key, latest_handshake = peers[self._public_key]
 
@@ -1143,10 +1147,11 @@ class TestPqRekeyTiming:
 
     In a healthy neptun tunnel the two look the same: a new preshared key drops
     neptun's sessions, so every PQ rekey immediately causes a WireGuard handshake,
-    which re-arms the next PQ rekey. The difference shows up when WireGuard handshakes
-    on its own. The tests provoke that by making one PQ rekey fail: WireGuard then
-    rekeys after REKEY_AFTER_TIME (120s), still with the old preshared key - the
-    situation LLT-6292 is about.
+    which re-arms the next PQ rekey. A failed PQ rekey is retried on a timer in both
+    modes, so failures don't set them apart either. They only differ when WireGuard
+    handshakes for some other reason - e.g. with kernel WireGuard a new preshared key
+    doesn't trigger a handshake, so the new mode waits for WireGuard's own rekey
+    (REKEY_AFTER_TIME, 120s) before the next PQ rekey.
 
     Everything is measured on the NLX server (`nlx show nlx0 dump`) with the server's
     clock, so the tests don't depend on the client's WireGuard implementation or logs.
@@ -1225,6 +1230,99 @@ class TestPqRekeyTiming:
     @pytest.mark.parametrize(
         "alpha_setup_params",
         [
+            pytest.param(
+                _pq_rekey_timing_setup_params(TelioAdapterType.LINUX_NATIVE_TUN),
+                marks=pytest.mark.linux_native,
+            ),
+        ],
+    )
+    @pytest.mark.parametrize("pq_version", [PQ_VERSION_V2])
+    @pytest.mark.parametrize("rekey_interval_s", [KERNEL_WG_PQ_REKEY_INTERVAL_S])
+    @pytest.mark.parametrize("rekey_attached_to_wg_handshake", PQ_REKEY_MODES)
+    async def test_pq_rekey_cadence_in_healthy_kernel_wg_tunnel(
+        self,
+        alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+        pq_version: int,  # pylint: disable=unused-argument
+        rekey_interval_s: int,
+        rekey_attached_to_wg_handshake: bool,
+        env: Environment,
+    ) -> None:
+        """Kernel WireGuard: the two modes differ even in a healthy tunnel.
+
+        Kernel WireGuard updates the preshared key in place, so a PQ rekey doesn't
+        cause a handshake - handshakes only come from WireGuard's own rekey, every
+        REKEY_AFTER_TIME (120s).
+        New: one PQ rekey per WireGuard handshake, `rekey_interval_s` after it.
+        Old: a PQ rekey every `rekey_interval_s`, several per WireGuard handshake.
+        """
+        client_conn, *_ = [conn.connection for conn in env.connections]
+        client, *_ = env.clients
+
+        await _connect_vpn_pq(client_conn, client)
+
+        async with AsyncExitStack() as exit_stack:
+            nlx_conn = await exit_stack.enter_async_context(
+                new_connection_by_tag(ConnectionTag.VM_LINUX_NLX_1)
+            )
+            nlx = NlxPeerObserver(nlx_conn, await _find_pq_client_public_key(nlx_conn))
+            await exit_stack.enter_async_context(nlx.observe())
+            connected_handshake = nlx.wg_handshakes[0]
+
+            # Keep data flowing, so that WireGuard rekeys right at REKEY_AFTER_TIME.
+            await exit_stack.enter_async_context(
+                Ping(client_conn, config.PHOTO_ALBUM_IP).run()
+            )
+
+            # One full WireGuard cycle, plus the PQ rekey that should follow the
+            # second handshake in the new mode. That handshake may need one retry,
+            # e.g. when it collides with a PQ rekey in the old mode.
+            window_s = (
+                WG_REKEY_AFTER_TIME_S
+                + WG_REKEY_TIMEOUT_S
+                + rekey_interval_s
+                + PQ_REKEY_SLACK_S
+            )
+            await nlx.wait_until(
+                lambda: nlx.last_sample_at >= connected_handshake + window_s,
+                timeout=window_s + 30,
+                what="end of the observation window",
+            )
+
+        handshakes = nlx.wg_handshakes
+        anchors = [rekey.last_wg_handshake for rekey in nlx.pq_rekeys]
+        timeline = nlx.timeline()
+        log.info("PQ rekey timeline:\n%s", timeline)
+
+        assert (
+            len(handshakes) == 2
+        ), f"expected only the connect handshake and WireGuard's own rekey:\n{timeline}"
+
+        if rekey_attached_to_wg_handshake:
+            assert (
+                anchors == handshakes
+            ), f"expected exactly one PQ rekey per WireGuard handshake:\n{timeline}"
+            for rekey in nlx.pq_rekeys:
+                assert (
+                    rekey_interval_s - 1
+                    <= rekey.since_wg_handshake
+                    <= rekey_interval_s + PQ_REKEY_SLACK_S
+                ), f"PQ rekey not {rekey_interval_s}s after a handshake:\n{timeline}"
+        else:
+            assert len(set(anchors)) < len(
+                anchors
+            ), f"expected several PQ rekeys per WireGuard handshake:\n{timeline}"
+            for previous, current in zip(nlx.pq_rekeys, nlx.pq_rekeys[1:]):
+                assert (
+                    abs(current.at - previous.at - rekey_interval_s) <= 2
+                ), f"PQ rekeys not {rekey_interval_s}s apart:\n{timeline}"
+
+        await ping(client_conn, config.PHOTO_ALBUM_IP)
+
+    @pytest.mark.nlx
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize(
+        "alpha_setup_params",
+        [
             pytest.param(_pq_rekey_timing_setup_params(TelioAdapterType.NEP_TUN)),
             pytest.param(
                 _pq_rekey_timing_setup_params(TelioAdapterType.LINUX_NATIVE_TUN),
@@ -1240,16 +1338,15 @@ class TestPqRekeyTiming:
         alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
         pq_version: int,  # pylint: disable=unused-argument
         rekey_interval_s: int,
-        rekey_attached_to_wg_handshake: bool,
+        rekey_attached_to_wg_handshake: bool,  # pylint: disable=unused-argument
         env: Environment,
     ) -> None:
-        """A PQ rekey fails while the WireGuard tunnel keeps working.
+        """A failed PQ rekey is retried every `handshake_retry_interval_s`, in both modes.
 
-        Old: the PQ timer goes on regardless of WireGuard, so the next successful
+        With `rekey_attached_to_wg_handshake` the retries are still timer driven and
+        don't wait for the next WireGuard handshake. So in both modes the successful
         rekey comes long before WireGuard's own rekey, still anchored to the
         handshake made when connecting.
-        New: no PQ rekey until WireGuard handshakes on its own (REKEY_AFTER_TIME,
-        same preshared key); the PQ rekey follows `rekey_interval_s` after that.
         """
         client_conn, *_ = [conn.connection for conn in env.connections]
         client, *_ = env.clients
@@ -1264,8 +1361,9 @@ class TestPqRekeyTiming:
             await exit_stack.enter_async_context(nlx.observe())
             connected_handshake = nlx.wg_handshakes[0]
 
-            # WireGuard only rekeys on its own while there is data to send
-            # (neptun doesn't count keepalives).
+            # Keep data flowing: if the rekey isn't retried, WireGuard then rekeys on
+            # its own after REKEY_AFTER_TIME and that shows up in the timeline
+            # (neptun doesn't count keepalives as data).
             await exit_stack.enter_async_context(
                 Ping(client_conn, config.PHOTO_ALBUM_IP).run()
             )
@@ -1288,18 +1386,17 @@ class TestPqRekeyTiming:
         timeline = nlx.timeline()
         log.info("PQ rekey timeline:\n%s", timeline)
 
-        if rekey_attached_to_wg_handshake:
-            assert (
-                rekey.last_wg_handshake > connected_handshake
-            ), f"PQ rekey didn't wait for WireGuard's own handshake:\n{timeline}"
-            assert (
-                rekey_interval_s - 1
-                <= rekey.since_wg_handshake
-                <= rekey_interval_s + PQ_REKEY_SLACK_S
-            ), f"PQ rekey not {rekey_interval_s}s after a handshake:\n{timeline}"
-        else:
-            assert (
-                rekey.last_wg_handshake == connected_handshake
-            ), f"expected the PQ timer to rekey before WireGuard did:\n{timeline}"
+        # First attempt at ~rekey_interval_s, then a retry every
+        # PQ_HANDSHAKE_RETRY_INTERVAL_S. Allow one extra retry in case the upgrader
+        # got unblocked only after the first one.
+        retried_within = (
+            rekey_interval_s + 2 * PQ_HANDSHAKE_RETRY_INTERVAL_S + PQ_REKEY_SLACK_S
+        )
+        assert (
+            rekey.last_wg_handshake == connected_handshake
+        ), f"PQ rekey waited for a WireGuard handshake instead of retrying:\n{timeline}"
+        assert (
+            rekey.since_wg_handshake <= retried_within
+        ), f"failed PQ rekey not retried within {retried_within}s:\n{timeline}"
 
         await ping(client_conn, config.PHOTO_ALBUM_IP)
