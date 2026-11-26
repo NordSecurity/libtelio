@@ -477,6 +477,7 @@ pub(crate) mod tests {
         nameserver::QUERY_TIMEOUT,
         packet_encoder::DNS_HEADER_OFFSET,
         tcp_fallback::tests::{frame, read_frame, spawn_tcp_stub, TcpStubBehavior},
+        upstream::tests::upstream_addr,
     };
     use std::net::Ipv4Addr;
     use telio_model::constants::DNS_PORT;
@@ -1070,7 +1071,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn packet_too_short_returns_error() {
-        let (forwarder, _upstreams) = new_forwarder(vec!["127.0.0.1:53".parse().unwrap()]).await;
+        let (forwarder, _upstreams) = new_forwarder(vec![upstream_addr(1)]).await;
 
         let result = forwarder.query(&[0x12]).await;
         match result {

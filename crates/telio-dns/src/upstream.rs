@@ -87,7 +87,7 @@ impl UpstreamCursor {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::collections::HashSet;
 
@@ -103,11 +103,15 @@ mod tests {
         SocketAddr::from(([103, 86, 99, last_octet], 53))
     }
 
+    pub(crate) fn upstream_addr(last_octet: u8) -> SocketAddr {
+        SocketAddr::from(([10, 0, 0, last_octet], 53))
+    }
+
     #[test]
     fn set_replaces_addrs_and_increments_generation() {
-        let a1: SocketAddr = "10.0.0.1:53".parse().unwrap();
-        let a2: SocketAddr = "10.0.0.2:53".parse().unwrap();
-        let a3: SocketAddr = "10.0.0.3:53".parse().unwrap();
+        let a1 = upstream_addr(1);
+        let a2 = upstream_addr(2);
+        let a3 = upstream_addr(3);
         let mut state = UpstreamList::default();
         assert_eq!(state.generation, 0);
         assert!(state.addrs().is_empty());
@@ -127,8 +131,8 @@ mod tests {
 
     #[test]
     fn set_same_list_keeps_generation_and_cursor() {
-        let a1: SocketAddr = "10.0.0.1:53".parse().unwrap();
-        let a2: SocketAddr = "10.0.0.2:53".parse().unwrap();
+        let a1 = upstream_addr(1);
+        let a2 = upstream_addr(2);
         let mut state = upstream_list(vec![a1, a2], 7);
         let mut cursor = state.new_cursor();
         assert_eq!(cursor.advance(&state), step(Some(a1), false));
@@ -145,8 +149,8 @@ mod tests {
 
     #[test]
     fn set_same_addrs_in_different_order_bumps_generation() {
-        let a1: SocketAddr = "10.0.0.1:53".parse().unwrap();
-        let a2: SocketAddr = "10.0.0.2:53".parse().unwrap();
+        let a1 = upstream_addr(1);
+        let a2 = upstream_addr(2);
         let mut state = upstream_list(vec![a1, a2], 0);
 
         state.set(vec![a2, a1]);
@@ -195,7 +199,7 @@ mod tests {
     #[test]
     fn set_keeps_order_of_mixed_list() {
         let mut addrs: Vec<_> = (1..=4).map(nord_addr).collect();
-        addrs.push("10.0.0.1:53".parse().unwrap());
+        addrs.push(upstream_addr(1));
         let mut state = UpstreamList::default();
         state.set(addrs.clone());
         assert_eq!(state.addrs(), addrs);
@@ -213,7 +217,7 @@ mod tests {
 
     #[test]
     fn generation_wraps_around() {
-        let a1: SocketAddr = "10.0.0.1:53".parse().unwrap();
+        let a1 = upstream_addr(1);
         let mut state = upstream_list(vec![], u64::MAX);
         let mut cursor = state.new_cursor();
 
@@ -224,9 +228,9 @@ mod tests {
 
     #[test]
     fn advance_walks_list_in_order() {
-        let a1: SocketAddr = "10.0.0.1:53".parse().unwrap();
-        let a2: SocketAddr = "10.0.0.2:53".parse().unwrap();
-        let a3: SocketAddr = "10.0.0.3:53".parse().unwrap();
+        let a1 = upstream_addr(1);
+        let a2 = upstream_addr(2);
+        let a3 = upstream_addr(3);
         let state = upstream_list(vec![a1, a2, a3], 0);
         let mut cursor = state.new_cursor();
 
@@ -238,11 +242,11 @@ mod tests {
 
     #[test]
     fn advance_restarts_on_generation_change() {
-        let a1: SocketAddr = "10.0.0.1:53".parse().unwrap();
-        let a2: SocketAddr = "10.0.0.2:53".parse().unwrap();
-        let a3: SocketAddr = "10.0.0.3:53".parse().unwrap();
-        let b1: SocketAddr = "10.0.0.11:53".parse().unwrap();
-        let b2: SocketAddr = "10.0.0.12:53".parse().unwrap();
+        let a1 = upstream_addr(1);
+        let a2 = upstream_addr(2);
+        let a3 = upstream_addr(3);
+        let b1 = upstream_addr(11);
+        let b2 = upstream_addr(12);
 
         let mut state = upstream_list(vec![a1, a2, a3], 0);
         let mut cursor = state.new_cursor();
@@ -258,7 +262,7 @@ mod tests {
 
     #[test]
     fn advance_restarts_onto_empty_list() {
-        let a1: SocketAddr = "10.0.0.1:53".parse().unwrap();
+        let a1 = upstream_addr(1);
         let mut state = upstream_list(vec![a1], 0);
         let mut cursor = state.new_cursor();
         assert_eq!(cursor.advance(&state), step(Some(a1), false));
@@ -270,8 +274,8 @@ mod tests {
 
     #[test]
     fn exhausted_cursor_restarts_on_generation_change() {
-        let a1: SocketAddr = "10.0.0.1:53".parse().unwrap();
-        let b1: SocketAddr = "10.0.0.11:53".parse().unwrap();
+        let a1 = upstream_addr(1);
+        let b1 = upstream_addr(11);
         let mut state = upstream_list(vec![a1], 0);
         let mut cursor = state.new_cursor();
         assert_eq!(cursor.advance(&state), step(Some(a1), false));
@@ -283,7 +287,7 @@ mod tests {
 
     #[test]
     fn advance_index_saturates_past_list_end() {
-        let a1: SocketAddr = "10.0.0.1:53".parse().unwrap();
+        let a1 = upstream_addr(1);
         let state = upstream_list(vec![a1], 0);
         let mut cursor = UpstreamCursor {
             index: usize::MAX,
@@ -297,7 +301,7 @@ mod tests {
 
     #[test]
     fn fresh_cursor_binds_to_any_generation_without_restart() {
-        let a1: SocketAddr = "10.0.0.1:53".parse().unwrap();
+        let a1 = upstream_addr(1);
         let state = upstream_list(vec![a1], 42);
         let mut cursor = state.new_cursor();
 
