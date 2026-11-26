@@ -287,6 +287,20 @@ def run_build_command(operating_system, args):
 
     run_command(command)
 
+    if operating_system == "windows" and os.path.exists("../../ci/finalize_win.py"):
+        command = [
+            "../../ci/build.sh",
+            "--default",
+            "windows",
+            "--cmd",
+            "python3 ci/finalize_win.py --arch x86_64",
+        ]
+        if args.telio_debug:
+            command.append("--debug")
+        if args.moose:
+            command.append("--moose")
+        run_command(command)
+
 
 OPENWRT_BUILDS = [("x86_64", "25.12.0"), ("mipsel", "24.10.4")]
 
