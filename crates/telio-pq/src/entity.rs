@@ -23,6 +23,38 @@ struct Peer {
     _rotation_task: super::conn::ConnKeyRotation,
     keys: Option<super::Keys>,
     last_key_fetch_ts: Option<SystemTime>,
+    /// First WireGuard handshake completed after `last_key_fetch_ts`.
+    /// Tracked only with `rekey_attached_to_wg_handshake`.
+    first_wg_handshake_ts: Option<SystemTime>,
+}
+
+impl Peer {
+    fn on_key_exchange(&mut self) {
+        self.last_key_fetch_ts = Some(SystemTime::now());
+        self.first_wg_handshake_ts = None;
+    }
+
+    fn on_wg_handshake_age(&mut self, age: Duration) {
+        if self.first_wg_handshake_ts.is_some() {
+            return;
+        }
+        let (Some(key_exchange), Some(handshake)) =
+            (self.last_key_fetch_ts, SystemTime::now().checked_sub(age))
+        else {
+            return;
+        };
+        if handshake >= key_exchange {
+            self.first_wg_handshake_ts = Some(handshake);
+        }
+    }
+
+    /// Start of the session that must get a PQ rekey within `REJECT_AFTER_TIME`.
+    ///
+    /// With kernel WireGuard a PSK change does not force a handshake, so the session
+    /// keyed with the last fetched PSK starts only at the next WireGuard handshake.
+    fn session_start_ts(&self) -> Option<SystemTime> {
+        self.first_wg_handshake_ts.or(self.last_key_fetch_ts)
+    }
 }
 
 pub struct Entity {
@@ -56,13 +88,16 @@ async fn filter(
     loop {
         last_handshake_times.changed().await.unwrap();
         let times: HashMap<_, _> = last_handshake_times.borrow().clone();
-        let pq_peer = pq_peer.lock().as_ref().map(|p| p.pubkey);
-        telio_log_debug!("XXX for {pq_peer:?} received new last handshake times: {times:?}");
+        let pq_pubkey = pq_peer.lock().as_ref().map(|p| p.pubkey);
+        telio_log_debug!("XXX for {pq_pubkey:?} received new last handshake times: {times:?}");
 
         for (pk, d) in times {
-            if Some(pk) == pq_peer {
+            if Some(pk) == pq_pubkey {
                 telio_log_debug!("XXX pq_peer: {pk} -> {d:?}");
                 if let Some(d) = d {
+                    if let Some(peer) = pq_peer.lock().as_mut().filter(|p| p.pubkey == pk) {
+                        peer.on_wg_handshake_age(d);
+                    }
                     if d > threshold {
                         if last_below {
                             telio_log_debug!("XXX start PQ rekey!");
@@ -116,7 +151,7 @@ impl Entity {
                 super::Event::KeyFetch(addr, keys) => {
                     if peer.addr == addr {
                         peer.keys = Some(keys);
-                        peer.last_key_fetch_ts = Some(SystemTime::now());
+                        peer.on_key_exchange();
                     }
                 }
                 super::Event::Rekey(super::Keys {
@@ -130,7 +165,7 @@ impl Entity {
                             // otherwise we're connecting to different node already
                             keys.pq_shared = pq_shared;
                             // Keys are also fetched during rekey
-                            peer.last_key_fetch_ts = Some(SystemTime::now());
+                            peer.on_key_exchange();
                         } else {
                             telio_log_debug!(
                                 "PQ secret key does not match, ignoring shared secret rotation"
@@ -214,12 +249,14 @@ impl Entity {
     // would return a negative value. The error returned contains the absolute value of the time difference.
     // We ignore values smaller than 5 seconds (chosen arbitrarily) because SystemTime does not guarantee monotonicity,
     // so it is possible that ts.elapsed() returns a small negative value when called shortly after ts was saved.
+    // With `rekey_attached_to_wg_handshake` the timeout runs from the first WireGuard handshake after the last
+    // key exchange (RFC LLT-0120 session termination), see `Peer::session_start_ts`.
     pub async fn maybe_restart(&self) {
         let peer = {
             let mut peer = self.peer.lock();
             let should_restart = peer
                 .as_ref()
-                .and_then(|peer| peer.last_key_fetch_ts)
+                .and_then(Peer::session_start_ts)
                 .is_some_and(|ts| match ts.elapsed() {
                     Ok(dur) => dur > REJECT_AFTER_TIME,
                     Err(err) => err.duration() > Duration::from_secs(5),
@@ -262,6 +299,7 @@ impl Entity {
             ),
             keys: None,
             last_key_fetch_ts: None,
+            first_wg_handshake_ts: None,
         });
 
         #[allow(mpsc_blocking_send)]
