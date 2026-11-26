@@ -296,10 +296,13 @@ class NordVpnLite:
         return proc
 
     @asynccontextmanager
-    async def start(self, cleanup: bool = True) -> AsyncIterator["NordVpnLite"]:
+    async def start(
+        self, cleanup: bool = True, pre_remove_logs: bool = True
+    ) -> AsyncIterator["NordVpnLite"]:
         log.info("NordVPN Lite starting..")
         try:
-            await self.remove_logs()
+            if pre_remove_logs:
+                await self.remove_logs()
             await self.save_config()
             await self.login()
 

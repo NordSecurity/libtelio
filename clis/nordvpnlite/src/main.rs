@@ -2,8 +2,10 @@
 
 use clap::Parser;
 use daemonize::{Daemonize, Outcome};
-use std::fs::{self, OpenOptions};
+use std::fs::{self, OpenOptions, Permissions};
 use std::io::{Error, ErrorKind};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::path::Path;
 use tokio::time::{timeout, Duration};
 
 mod auth;
@@ -23,9 +25,6 @@ use crate::{
     core_api::get_countries_with_exp_backoff,
     daemon::NordVpnLiteError,
 };
-
-/// Umask allows only rw-rw-r--
-const DEFAULT_UMASK: u32 = 0o113;
 
 /// Default permissions for created files.
 const DEFAULT_FILE_PERMISSIONS: u32 = 0o640;
@@ -51,6 +50,11 @@ fn main() -> Result<(), NordVpnLiteError> {
         // Environment variables have precedence over the auth file
         config.parsed.check_auth_token()?;
 
+        // Set file permissions for any old log files that may have been
+        // created with the incorrect file permissions
+        set_permissions_for_prefix(&opts.stdout_path);
+        set_permissions_for_prefix(&config.parsed.log_file_path);
+
         println!("Saving logs to: {}", config.parsed.log_file_path);
         println!("Starting daemon");
 
@@ -65,12 +69,14 @@ fn main() -> Result<(), NordVpnLiteError> {
                 .create(true)
                 .write(true)
                 .truncate(true)
+                .mode(DEFAULT_FILE_PERMISSIONS)
                 .open(&opts.stdout_path)?;
+
+            stdout_log_file.set_permissions(Permissions::from_mode(DEFAULT_FILE_PERMISSIONS))?;
 
             // Daemon working directory is set to `/` by default
             // any relative path operations from now on could fail
             let daemon = Daemonize::new()
-                .umask(DEFAULT_UMASK)
                 .working_directory(&opts.working_directory)
                 .stdout(stdout_log_file.try_clone()?)
                 .stderr(stdout_log_file);
@@ -93,6 +99,11 @@ fn main() -> Result<(), NordVpnLiteError> {
                     return Err(err.into());
                 }
             }
+        } else {
+            use nix::sys::stat::{umask, Mode};
+            // Same default as Daemonize::new() applies in the detach case
+            const UMASK: Mode = Mode::from_bits_truncate(0o027);
+            umask(UMASK);
         }
 
         let mut logging_handle = logging::setup_logging(
@@ -228,6 +239,34 @@ fn handle_logout(opts: LogoutOpts) -> Result<(), NordVpnLiteError> {
         }
         Err(err) => Err(err.into()),
     }
+}
+
+/// Best-effort updating of permissions for files starting with a given path
+///
+/// A umask is set for the nordvpnlite process to make sure log files get 640
+/// as the file permissions. In case there are log files created before that
+/// umask was added, this function can be used to update their permissions.
+/// This function will silently ignore any errors, hence "best-effort"
+fn set_permissions_for_prefix<P: AsRef<Path>>(prefix: P) {
+    let prefix = prefix.as_ref();
+    let dir = prefix.parent().unwrap_or(Path::new("."));
+    let file_prefix = prefix.file_name().and_then(|s| s.to_str());
+    let dir_entries = fs::read_dir(dir);
+
+    let (Some(file_prefix), Ok(dir_entries)) = (file_prefix, dir_entries) else {
+        return;
+    };
+
+    dir_entries.flat_map(|entry| entry.ok()).for_each(|entry| {
+        if entry.file_name().to_string_lossy().starts_with(file_prefix)
+            && entry.file_type().is_ok_and(|ft| ft.is_file())
+        {
+            let _ = fs::set_permissions(
+                entry.path(),
+                fs::Permissions::from_mode(DEFAULT_FILE_PERMISSIONS),
+            );
+        }
+    });
 }
 
 /// Shared helpers and fixtures for unit tests across the crate.
