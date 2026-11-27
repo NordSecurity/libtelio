@@ -19,7 +19,7 @@ tracing-subscriber.workspace = true
 # Tokio support is needed, because the daemon runs on the async runtime.
 interprocess = { version = "2.4.2", features = ["tokio"] }
 
-nix = { version = "0.31.3", features = ["signal"] }
+nix = { version = "0.31.4", features = ["signal"] }
 
 telio-core = { workspace = true, features = [], default-features = false }
 tokio.workspace = true

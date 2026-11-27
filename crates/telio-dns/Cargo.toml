@@ -27,6 +27,7 @@ tokio = { workspace = true, features = ["rt", "net", "sync", "macros"] }
 telio-crypto.workspace = true
 telio-model.workspace = true
 telio-utils.workspace = true
+telio-sockets.workspace = true
 telio-wg.workspace = true
 
 [dev-dependencies]

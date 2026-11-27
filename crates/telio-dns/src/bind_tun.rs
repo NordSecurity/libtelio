@@ -19,11 +19,9 @@ pub(crate) use any::{bind_to_tun, set_tun};
 )]
 mod darwin {
     use nix::net::if_::if_nametoindex;
-    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
-    use nix::sys::socket::sockopt::UtunIfname;
-    use nix::sys::socket::{getsockopt, setsockopt};
+    use nix::sys::socket::setsockopt;
     use nix::{setsockopt_impl, sockopt_impl};
-    use std::os::fd::AsFd;
+    use std::os::fd::{AsFd, AsRawFd};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::{io, sync::Mutex};
     use telio_utils::{telio_log_debug, telio_log_trace, telio_log_warn};
@@ -44,7 +42,7 @@ mod darwin {
     pub(crate) fn set_tun(tun: Option<&Tun>) -> io::Result<()> {
         // For darwin bind socket to tun interface.
         if let Some(tun_fd) = tun {
-            let name = getsockopt(&tun_fd, UtunIfname)?;
+            let name = telio_sockets::native::utun_name(tun_fd.as_raw_fd())?;
             let index = if_nametoindex(name.as_c_str())?;
             if index == 0 {
                 return Err(io::Error::last_os_error());

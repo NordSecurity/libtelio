@@ -117,8 +117,7 @@ if-addrs = "0.15.0"
 ipnet = { version = "2.12", features = ["serde"] }
 itertools = "0.15"
 lazy_static = "1.5"
-# later libc versions make several Apple items available only for macOS, which breaks `nix` compilation for iOS and tvOS
-libc = "=0.2.189"
+libc = "0.2.191"
 tracing = { version = "0.1", features = [
   "max_level_trace",
   "release_max_level_debug",
@@ -128,7 +127,7 @@ mockall = "0.15"
 mockall_double = "0.3.1"
 modifier = "0.1.0"
 nat-detect = { git = "https://github.com/NordSecurity/nat-detect.git", tag = "v0.1.10", default-features = false }
-nix = { version = "0.31.3", features = ["fs", "socket", "uio", "net"] }
+nix = { version = "0.31.4", features = ["fs", "socket", "uio", "net"] }
 ntest = "0.10"
 num_cpus = "1"
 num_enum = "0.7"
@@ -181,7 +180,7 @@ windows = { version = "0.62.2", features = [
 ] }
 winreg = "0.56.0"
 
-neptun = { git = "https://github.com/NordSecurity/neptun.git", tag = "v3.0.6", features = [
+neptun = { git = "https://github.com/NordSecurity/neptun.git", tag = "v3.0.8", features = [
   "device",
 ] }
 x25519-dalek = { version = "2.0.1", features = [
