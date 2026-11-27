@@ -49,6 +49,9 @@ use std::{
     time::Duration,
 };
 
+/// Age of the last handshake for each WG peer
+pub type HandshakeAges = HashMap<PublicKey, Option<Duration>>;
+
 /// WireGuard adapter interface
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
 #[async_trait]
@@ -150,7 +153,7 @@ pub struct Io {
     /// Channel to report WireGuard listen port changes
     pub listen_port_events: Tx<Option<u16>>,
     /// WG handshake ages for all peers
-    pub last_handshake_ages: tokio::sync::watch::Sender<HashMap<PublicKey, Option<Duration>>>,
+    pub last_handshake_ages: tokio::sync::watch::Sender<HandshakeAges>,
 }
 
 /// Keepalive packets size
@@ -168,7 +171,7 @@ struct State {
     interface: Interface,
     event: Tx<Box<Event>>,
     listen_port_event: Tx<Option<u16>>,
-    last_handshake_ages_event: tokio::sync::watch::Sender<HashMap<PublicKey, Option<Duration>>>,
+    last_handshake_ages_event: tokio::sync::watch::Sender<HandshakeAges>,
     analytics_tx: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
     // Detecting unexpected driver failures, such as a malicious removal
     // We won't be notified of any errors, but a periodic call to get_config_uapi() will return a Win32 error code != 0.
@@ -865,7 +868,7 @@ impl State {
             );
         }
 
-        let mut handshake_times: HashMap<PublicKey, Option<Duration>> = HashMap::default();
+        let mut handshake_ages: HashMap<PublicKey, Option<Duration>> = HashMap::default();
         for (pk, peer) in &mut to.peers {
             match self.stats.get_mut(pk) {
                 Some(stats) => match stats.lock().as_mut() {
@@ -891,13 +894,13 @@ impl State {
                 }
             }
             peer.time_since_last_rx = self.time_since_last_rx(*pk);
-            handshake_times.insert(*pk, peer.time_since_last_handshake);
+            handshake_ages.insert(*pk, peer.time_since_last_handshake);
         }
 
         self.last_handshake_ages_event.send_if_modified(|current| {
-            let ret = *current != handshake_times;
+            let ret = *current != handshake_ages;
             if ret {
-                *current = handshake_times;
+                *current = handshake_ages;
             }
             ret
         });

@@ -1299,7 +1299,7 @@ impl Runtime {
             .then(|| meshnet_on_checker(meshnet_on.clone()));
 
         let (last_handshake_ages_tx, last_handshake_ages_rx) =
-            tokio::sync::watch::channel(HashMap::<PublicKey, Option<Duration>>::default());
+            tokio::sync::watch::channel(wg::HandshakeAges::default());
 
         // tests runtime use wg::MockedAdapter
         cfg_if! {
