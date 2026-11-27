@@ -2,7 +2,7 @@ use std::net::IpAddr;
 
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use telio_core::telio_task::io::chan;
+use telio_core::{crypto::PublicKey, telio_task::io::chan};
 use tokio::sync::oneshot;
 use tracing::{error, info, trace};
 
@@ -42,6 +42,8 @@ pub enum TelioTaskCmd {
     GetStatus(oneshot::Sender<TelioStatusReport>),
     // Connect to exit node with endpoint and optional hostname
     ConnectToExitNode(ExitNodeConfig),
+    // Set exit routes
+    SetExitRoutes(PublicKey),
     // Break the receive loop to quit the daemon and exit gracefully
     Quit(oneshot::Sender<()>),
 }

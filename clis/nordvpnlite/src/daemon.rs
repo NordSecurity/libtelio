@@ -11,6 +11,7 @@ use telio_core::connection_config::VpnConnectionConfigBuilder;
 use telio_core::crypto::PublicKey;
 use telio_core::telio_model::mesh::Node;
 use thiserror::Error as ThisError;
+use tokio::sync::mpsc::Sender;
 use tokio::task::JoinError;
 use tokio::{
     sync::{mpsc, oneshot},
@@ -146,12 +147,14 @@ struct TelioContext {
     interface_config_provider: Box<dyn ConfigureInterface>,
     config: NordVpnLiteConfig,
     exit_node: Option<ExitNodeStatus>,
+    requested_exit_node: Option<ExitNodeConfig>,
 }
 
 impl TelioContext {
     fn new(
         config: NordVpnLiteConfig,
         nordlynx_private_key: SecretKey,
+        command_tx: Sender<TelioTaskCmd>,
     ) -> Result<Self, NordVpnLiteError> {
         debug!("Initializing telio device");
 
@@ -165,7 +168,22 @@ impl TelioContext {
             features.firewall = Some(Default::default());
         }
 
-        let mut telio = Device::new(features, handle_telio_event, None)?;
+        let command_tx = Arc::new(command_tx);
+        let handle_event = move |event: Box<Event>| {
+            if let Event::Node { body } = event.as_ref() {
+                if body.state == NodeState::Connected
+                    && body.is_exit
+                    && command_tx
+                        .blocking_send(TelioTaskCmd::SetExitRoutes(body.public_key))
+                        .is_err()
+                {
+                    warn!("Failed to set exit routes, daemon is already shutting down");
+                }
+            }
+            handle_telio_event(event);
+        };
+
+        let mut telio = Device::new(features, handle_event, None)?;
         Self::start_telio(&mut telio, &config, nordlynx_private_key)?;
 
         let mut interface_config_provider = config.interface.get_config_provider();
@@ -179,6 +197,7 @@ impl TelioContext {
             interface_config_provider,
             config,
             exit_node: None,
+            requested_exit_node: None,
         })
     }
 
@@ -263,12 +282,21 @@ impl TelioTaskCmd {
                 }
                 Ok(TelioTaskOutcome::Continue)
             }
+            TelioTaskCmd::SetExitRoutes(pubkey) => {
+                if let Some(ExitNodeConfig { endpoint, dns, .. }) = ctx.requested_exit_node.as_ref()
+                {
+                    if endpoint.public_key == pubkey {
+                        ctx.interface_config_provider
+                            .set_exit_routes(&endpoint.address, dns)
+                            .inspect_err(|e| {
+                                error!("Failed to set routes for exit routing with error '{e:?}'")
+                            })?;
+                        ctx.requested_exit_node = None;
+                    }
+                }
+                Ok(TelioTaskOutcome::Continue)
+            }
             TelioTaskCmd::ConnectToExitNode(exit_node) => {
-                ctx.interface_config_provider
-                    .set_exit_routes(&exit_node.endpoint.address, &exit_node.dns)
-                    .inspect_err(|e| {
-                        error!("Failed to set routes for exit routing with error '{e:?}'")
-                    })?;
                 let endpoint = SocketAddr::new(
                     exit_node.endpoint.address,
                     ctx.config
@@ -301,11 +329,13 @@ impl TelioTaskCmd {
                             exit_node.endpoint.hostname.as_deref().unwrap_or_default()
                         );
                         let external_nodes = ctx.telio.external_nodes()?;
+                        let exit_node_config = exit_node.clone();
                         let exit_node =
                             external_nodes.iter().find(|node| node.is_exit).map(|node| {
                                 ExitNodeStatus::from_node(node, exit_node.endpoint.hostname)
                             });
                         ctx.exit_node = exit_node;
+                        ctx.requested_exit_node = Some(exit_node_config);
                     }
                     Err(e) => {
                         error!("Failed to connect to VPN with error: {e:?}");
@@ -468,8 +498,9 @@ async fn run_daemon(config: RunningConfig) -> Result<LoopOutcome, NordVpnLiteErr
 
     let config_clone = config.parsed.clone();
     let (init_done_tx, init_done_rx) = oneshot::channel::<()>();
+    let tx = telio_tx.clone();
     let mut telio_task_handle = tokio::task::spawn_blocking(move || {
-        let mut context = TelioContext::new(config_clone, nordlynx_private_key)?;
+        let mut context = TelioContext::new(config_clone, nordlynx_private_key, tx)?;
         let _ = init_done_tx.send(());
         context.start_listening_commands(telio_rx)
     });

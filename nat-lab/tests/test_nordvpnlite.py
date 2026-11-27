@@ -20,6 +20,7 @@ from tests.test_pq import inspect_preshared_key
 from tests.utils import stun
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import new_connection_by_tag
+from tests.utils.dns import query_dns
 from tests.utils.logger import log
 from tests.utils.ping import ping
 from tests.utils.process.process import ProcessExecError
@@ -222,6 +223,31 @@ async def test_nordvpnlite_vpn_connection(config: NordVpnLiteConfig) -> None:
             assert (
                 ip == WG_SERVER["ipv4"]
             ), f"wrong public IP when connected to VPN {ip}"
+
+
+async def test_nordvpnlite_maintains_connectivity_while_connecting_to_vpn_server() -> (
+    None
+):
+    async with AsyncExitStack() as exit_stack:
+        config = CONFIG_PRESETS[ConfigPresetName.DEFAULT]
+        config.vpn = VPNConfig(
+            server=VPNServer(
+                address="127.0.0.1", public_key=str(WG_SERVER["public_key"])
+            )
+        )
+        nordvpnlite = await NordVpnLite.new(exit_stack, config)
+        await nordvpnlite.request_credentials_from_core()
+
+        await ping(nordvpnlite.connection, PHOTO_ALBUM_IP)
+        await query_dns(nordvpnlite.connection, "google.com", dns_server="10.0.80.82")
+
+        async with nordvpnlite.start():
+            await nordvpnlite.wait_for_vpn_connecting_state()
+
+            await ping(nordvpnlite.connection, PHOTO_ALBUM_IP)
+            await query_dns(
+                nordvpnlite.connection, "google.com", dns_server="10.0.80.82"
+            )
 
 
 @pytest.mark.parametrize(
