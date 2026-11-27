@@ -42,12 +42,13 @@ use windows::core::PCWSTR;
 use windows::Win32::Devices::DeviceAndDriverInstallation::GUID_DEVCLASS_NET;
 use windows::Win32::Devices::DeviceAndDriverInstallation::{
     CM_Get_DevNode_Status, CM_Register_Notification, CM_Unregister_Notification,
-    SetupDiCallClassInstaller, SetupDiEnumDeviceInfo, SetupDiGetDeviceRegistryPropertyW,
-    SetupDiSetClassInstallParamsW, CM_DEVNODE_STATUS_FLAGS, CM_NOTIFY_ACTION,
-    CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL, CM_NOTIFY_EVENT_DATA, CM_NOTIFY_FILTER,
-    CM_NOTIFY_FILTER_0, CM_NOTIFY_FILTER_0_0, CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE, CM_PROB,
-    CONFIGRET, CR_SUCCESS, DIF_REMOVE, DI_REMOVEDEVICE_GLOBAL, DN_HAS_PROBLEM, HCMNOTIFICATION,
-    SPDRP_FRIENDLYNAME, SP_CLASSINSTALL_HEADER, SP_REMOVEDEVICE_PARAMS,
+    SetupDiCallClassInstaller, SetupDiEnumDeviceInfo, SetupDiGetDeviceInstanceIdW,
+    SetupDiGetDeviceRegistryPropertyW, SetupDiSetClassInstallParamsW, CM_DEVNODE_STATUS_FLAGS,
+    CM_NOTIFY_ACTION, CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL, CM_NOTIFY_EVENT_DATA,
+    CM_NOTIFY_FILTER, CM_NOTIFY_FILTER_0, CM_NOTIFY_FILTER_0_0,
+    CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE, CM_PROB, CONFIGRET, CR_SUCCESS, DIF_REMOVE,
+    DI_REMOVEDEVICE_GLOBAL, DN_HAS_PROBLEM, HCMNOTIFICATION, HDEVINFO, MAX_DEVICE_ID_LEN,
+    SPDRP_FRIENDLYNAME, SP_CLASSINSTALL_HEADER, SP_DEVINFO_DATA, SP_REMOVEDEVICE_PARAMS,
 };
 use windows::Win32::Foundation::ERROR_SUCCESS;
 use windows::Win32::NetworkManagement::Ndis::GUID_DEVINTERFACE_NET;
@@ -342,8 +343,13 @@ impl WindowsNativeWg {
     ///
     /// This is a partial Rust port of `AdapterCleanupOrphanedDevices` from
     /// WireGuard-NT's `api/adapter.c`. It enumerates all `GUID_DEVCLASS_NET`
-    /// devices created by the WireGuard software enumerator and removes any
+    /// devices created by the WireGuard software enumerator and removes those
     /// whose devnode has `DN_HAS_PROBLEM` set.
+    ///
+    /// Unlike upstream, only adapters owned by us are considered - see
+    /// [`Self::is_own_adapter`]. Other WireGuard-NT users (e.g. the official
+    /// WireGuard client) share the same enumerator, and their adapters must never
+    /// be removed by us, even if they report a problem.
     ///
     /// Afterwards it also drops the per-GUID network configuration that `DIF_REMOVE`
     /// leaves behind for the retry GUIDs derived from `name` - see
@@ -375,8 +381,6 @@ impl WindowsNativeWg {
             };
 
             let mut index: u32 = 0;
-            const FRIENDLY_NAME_BUF_WCHARS: usize = 260;
-            let mut name_buf = [0u16; FRIENDLY_NAME_BUF_WCHARS];
             let mut removed = false;
 
             loop {
@@ -384,6 +388,22 @@ impl WindowsNativeWg {
                     .is_err()
                 {
                     break;
+                }
+
+                let instance_id =
+                    Self::read_device_instance_id(dev_info_handle, &dev_info_set.dev_info_data);
+                let friendly_name =
+                    Self::read_device_friendly_name(dev_info_handle, &dev_info_set.dev_info_data);
+
+                // Skip devices that do not belong to us.
+                if !Self::is_own_adapter(adapter_name, instance_id.as_deref()) {
+                    telio_log_debug!(
+                        "Skipping foreign WireGuard adapter {:?} ({:?}) during orphaned device cleanup",
+                        friendly_name,
+                        instance_id
+                    );
+                    index += 1;
+                    continue;
                 }
 
                 // Skip devices that are not marked as having problems.
@@ -401,36 +421,8 @@ impl WindowsNativeWg {
                     continue;
                 }
 
-                // Best-effort: fetch device friendly name for logging.
-                let name = if SetupDiGetDeviceRegistryPropertyW(
-                    dev_info_handle,
-                    &dev_info_set.dev_info_data,
-                    SPDRP_FRIENDLYNAME,
-                    None,
-                    Some(std::slice::from_raw_parts_mut(
-                        name_buf.as_mut_ptr() as *mut u8,
-                        std::mem::size_of_val(&name_buf),
-                    )),
-                    None,
-                )
-                .is_ok()
-                {
-                    let end = name_buf
-                        .iter()
-                        .position(|&c| c == 0)
-                        .unwrap_or(FRIENDLY_NAME_BUF_WCHARS);
-                    let s = name_buf
-                        .get(..end)
-                        .map(|s| String::from_utf16_lossy(s).trim().to_string())
-                        .unwrap_or_default();
-                    if s.is_empty() {
-                        format!("devinst {}", dev_info_set.dev_info_data.DevInst)
-                    } else {
-                        s
-                    }
-                } else {
-                    format!("devinst {}", dev_info_set.dev_info_data.DevInst)
-                };
+                let name = friendly_name
+                    .unwrap_or_else(|| format!("devinst {}", dev_info_set.dev_info_data.DevInst));
 
                 let remove_params = SP_REMOVEDEVICE_PARAMS {
                     ClassInstallHeader: SP_CLASSINSTALL_HEADER {
@@ -485,6 +477,66 @@ impl WindowsNativeWg {
                 std::thread::sleep(Duration::from_secs(REMOVAL_SLEEP_SECS));
             }
         }
+    }
+
+    /// Decide whether a WireGuard-NT device is one of the adapters we create for `name`.
+    ///
+    /// WireGuard-NT uses the requested GUID as the device instance ID, so ours are
+    /// `SWD\WireGuard\{GUID}` for one of the `ADAPTER_GUID_POOL_SIZE` GUIDs derived from
+    /// `name`. Anything else, e.g. the official client's `WireGuard Tunnel`, is not ours.
+    fn is_own_adapter(name: &str, instance_id: Option<&str>) -> bool {
+        let Some(instance_id) = instance_id else {
+            return false;
+        };
+        let instance_id = instance_id.to_uppercase();
+        (0..ADAPTER_GUID_POOL_SIZE).any(|slot| {
+            let guid = Self::get_adapter_guid_from_name_hash(name, slot);
+            let expected = format!(
+                r"{}\{}",
+                service::WIREGUARD_ENUMERATOR,
+                Self::guid_to_windows_string(guid)
+            );
+            instance_id == expected.to_uppercase()
+        })
+    }
+
+    /// Read the device instance ID, e.g. `SWD\WireGuard\{GUID}`.
+    unsafe fn read_device_instance_id(
+        dev_info: HDEVINFO,
+        dev_info_data: &SP_DEVINFO_DATA,
+    ) -> Option<String> {
+        let mut buf = [0u16; MAX_DEVICE_ID_LEN as usize];
+        SetupDiGetDeviceInstanceIdW(dev_info, dev_info_data, Some(&mut buf), None).ok()?;
+        Self::utf16_buf_to_string(&buf)
+    }
+
+    /// Read the device friendly name, e.g. `NordLynx`.
+    unsafe fn read_device_friendly_name(
+        dev_info: HDEVINFO,
+        dev_info_data: &SP_DEVINFO_DATA,
+    ) -> Option<String> {
+        const FRIENDLY_NAME_BUF_WCHARS: usize = 260;
+        let mut buf = [0u16; FRIENDLY_NAME_BUF_WCHARS];
+        SetupDiGetDeviceRegistryPropertyW(
+            dev_info,
+            dev_info_data,
+            SPDRP_FRIENDLYNAME,
+            None,
+            Some(std::slice::from_raw_parts_mut(
+                buf.as_mut_ptr() as *mut u8,
+                std::mem::size_of_val(&buf),
+            )),
+            None,
+        )
+        .ok()?;
+        Self::utf16_buf_to_string(&buf)
+    }
+
+    /// Convert a NUL-terminated UTF-16 buffer to a trimmed string, `None` if empty.
+    fn utf16_buf_to_string(buf: &[u16]) -> Option<String> {
+        let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+        let s = String::from_utf16_lossy(buf.get(..end)?).trim().to_string();
+        (!s.is_empty()).then_some(s)
     }
 
     /// Delete the persistent per-GUID network configuration left behind by adapters
@@ -1088,6 +1140,45 @@ mod tests {
             ),
             "{FC01FCD5-2B9D-2FD8-78D8-CB78B313E2B2}"
         );
+    }
+
+    #[test]
+    fn own_adapter_requires_our_guid() {
+        let own_id = |slot| {
+            format!(
+                r"SWD\WireGuard\{}",
+                WindowsNativeWg::guid_to_windows_string(
+                    WindowsNativeWg::get_adapter_guid_from_name_hash("NordLynx", slot)
+                )
+            )
+        };
+        let primary = own_id(PRIMARY_GUID_SLOT);
+        let retry = own_id(ADAPTER_GUID_POOL_SIZE - 1);
+
+        // Ours: any pool GUID, matched case-insensitively
+        for id in [primary.clone(), retry, primary.to_lowercase()] {
+            assert!(
+                WindowsNativeWg::is_own_adapter("NordLynx", Some(&id)),
+                "{id} should be ours"
+            );
+        }
+
+        // Not ours: foreign GUID, GUID outside the pool, unreadable ID or a different adapter name
+        let outside_pool = own_id(ADAPTER_GUID_POOL_SIZE);
+        for (name, id) in [
+            (
+                "NordLynx",
+                Some(r"SWD\WireGuard\{CAC88484-7515-4C03-82E6-71A87ABAC361}"),
+            ),
+            ("NordLynx", Some(outside_pool.as_str())),
+            ("NordLynx", None),
+            ("wg0", Some(primary.as_str())),
+        ] {
+            assert!(
+                !WindowsNativeWg::is_own_adapter(name, id),
+                "{name} / {id:?} should not be ours"
+            );
+        }
     }
 
     #[test]

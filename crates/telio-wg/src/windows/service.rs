@@ -5,7 +5,6 @@ use std::mem;
 use std::{ptr, time::Duration};
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn, Instant};
 use tokio::time::sleep;
-use utf16_lit::utf16_null;
 use windows::core::GUID;
 use windows::core::{Error, Result as WindowsResult, HRESULT, PCWSTR};
 use windows::Win32::Devices::DeviceAndDriverInstallation::SETUP_DI_GET_CLASS_DEVS_FLAGS;
@@ -13,8 +12,8 @@ use windows::Win32::Devices::DeviceAndDriverInstallation::{
     CM_Get_DevNode_Status, CM_Get_Device_Interface_ListW, CM_Get_Device_Interface_List_SizeW,
     SetupDiCreateDeviceInfoList, SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInfo,
     SetupDiGetClassDevsExW, SetupDiOpenDevRegKey, SetupDiOpenDeviceInfoW, CM_DEVNODE_STATUS_FLAGS,
-    CM_GET_DEVICE_INTERFACE_LIST_PRESENT, CONFIGRET, CR_SUCCESS, DICS_FLAG_GLOBAL, DIGCF_PRESENT,
-    DIREG_DRV, DN_DRIVER_LOADED, DN_STARTED, HDEVINFO, SP_DEVINFO_DATA,
+    CM_GET_DEVICE_INTERFACE_LIST_PRESENT, CONFIGRET, CR_SUCCESS, DICS_FLAG_GLOBAL, DIREG_DRV,
+    DN_DRIVER_LOADED, DN_STARTED, HDEVINFO, SP_DEVINFO_DATA,
 };
 use windows::Win32::Foundation::{GetLastError, ERROR_GEN_FAILURE, ERROR_SUCCESS};
 use windows::Win32::NetworkManagement::IpHelper::{GetIfEntry2, MIB_IF_ROW2};
@@ -28,7 +27,6 @@ use winreg::{enums::*, RegKey};
 
 const KEY_QUERY_VALUE: u32 = 0x0001;
 
-use windows::Win32::Devices::DeviceAndDriverInstallation::GUID_DEVCLASS_NET;
 use windows::Win32::NetworkManagement::Ndis::GUID_DEVINTERFACE_NET;
 
 pub const GUID_DEVINTERFACE_NET_STR: &str =
@@ -384,19 +382,18 @@ fn get_device_instance_id_for_adapter_luid(
     Err(AdapterInterfaceReadyError::DeviceInstanceIdNotFound)
 }
 
-fn is_network_driver_initialized() -> Result<(), AdapterInterfaceReadyError> {
-    let enumerator_utf16 = utf16_null!(WIREGUARD_ENUMERATOR);
-
-    let dev_info_set = ScopedDeviceInfoSet::from_class_devs_ex(
-        Some(&GUID_DEVCLASS_NET),
-        PCWSTR(enumerator_utf16.as_ptr()),
-        DIGCF_PRESENT,
-        Some(0),
-    )?;
+/// Checks that the driver is loaded and started for the device identified by
+/// `device_instance_id`. Other WireGuard-NT adapters (e.g. the official WireGuard
+/// client's) share the same enumerator, so the check must target our own devnode.
+fn is_network_driver_initialized(
+    device_instance_id: &[u16],
+) -> Result<(), AdapterInterfaceReadyError> {
+    let dev_info = ScopedDeviceInfoList::new(device_instance_id)
+        .map_err(|_| AdapterInterfaceReadyError::DriverNotInitialized)?;
 
     let mut status = CM_DEVNODE_STATUS_FLAGS(0);
     let mut problem = windows::Win32::Devices::DeviceAndDriverInstallation::CM_PROB(0);
-    let dev_inst = dev_info_set.dev_info_data.DevInst;
+    let dev_inst = dev_info.dev_info_data.DevInst;
 
     let cr = unsafe { CM_Get_DevNode_Status(&mut status, &mut problem, dev_inst, 0) };
     if cr != CR_SUCCESS {
@@ -454,13 +451,13 @@ unsafe fn query_registry_status(
 /// * `Ok(())` if the adapter interface is created and registered.
 /// * `Err(win32_error)` on failure (e.g. ERROR_DEVICE_NOT_READY).
 fn is_network_adapter_interface_ready(adapter_luid: u64) -> Result<(), AdapterInterfaceReadyError> {
-    // 1. Network driver must be initialized.
-    is_network_driver_initialized()?;
+    // 1. Network driver must be initialized for our adapter's device.
+    let device_instance_id: Vec<u16> = get_device_instance_id_for_adapter_luid(adapter_luid)?;
+    is_network_driver_initialized(&device_instance_id)?;
     telio_log_debug!("Network driver initialized");
 
     // 2) Driver registry must have NetCfgInstanceId and NetLuidIndex (written by NDIS
     //    when the miniport registers).
-    let device_instance_id: Vec<u16> = get_device_instance_id_for_adapter_luid(adapter_luid)?;
     let mut dev_info = ScopedDeviceInfoList::new(&device_instance_id)?;
     let drv_key = ScopedRegKey::new(&mut dev_info)?;
 

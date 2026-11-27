@@ -99,72 +99,46 @@ async def test_wg_adapter_cleanup_loop_clean_shutdown(
 async def test_wg_adapter_cleanup_loop_dirty_shutdown(
     conn_tag: ConnectionTag, iterations: int
 ):
-    for i in range(iterations):
-        log.info("Dirty shutdown iteration %d", i)
+    # libtelio only cleans up orphaned adapters on the GUIDs derived from its own
+    # adapter name, so the killed run and the restart must share the same name
+    adapter_name = f"wgnt_dirty_{uuid.uuid4().hex[:8]}"
+    log.info("Using adapter name %s", adapter_name)
 
-        # Run libtelio and kill it dirty so it would leave hanging wg-nt adapter
-        try:
-            async with AsyncExitStack() as exit_stack:
-                env = await exit_stack.enter_async_context(
-                    setup_environment(
-                        exit_stack,
-                        [
-                            SetupParameters(
-                                connection_tag=conn_tag,
-                                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
-                            )
-                        ],
-                    )
-                )
+    async with AsyncExitStack() as exit_stack:
+        _, (node,) = setup_api([(False, IPStack.IPv4)])
+        conn_manager, *_ = await setup_connections(exit_stack, [conn_tag])
+        conn = conn_manager.connection
 
-                conn, *_ = [conn.connection for conn in env.connections]
-                assert (
-                    "WireGuard" in (
-                        await conn.create_process(QUERY_CMD).execute()
-                    ).get_stdout()
-                )
+        for i in range(iterations):
+            log.info("Dirty shutdown iteration %d", i)
 
-                await conn.create_process(
-                    ["taskkill", "/T", "/F", "/IM", "python.exe"]
-                ).execute()
-        except (CommunicationError, ConnectionRefusedError, ProcessExecError) as e:
-            log.warning("Dirty shutdown iteration %d failed with %s", i, e)
+            # Run libtelio and kill it dirty so it would leave hanging wg-nt adapter
+            client = new_wg_nt_client(
+                conn, node, adapter_name, enable_guid_rotation=False
+            )
+            try:
+                async with client.run():
+                    assert await used_guid_slots(conn, adapter_name)
+                    await conn.create_process(KILL_LIBTELIO_REMOTE_CMD).execute()
+            except (CommunicationError, ConnectionRefusedError, ProcessExecError) as e:
+                log.warning("Dirty shutdown iteration %d failed with %s", i, e)
 
-        # Check if libtelio left hanging wg-nt adapter
-        async with new_connection_by_tag(conn_tag) as conn:
-            if (
-                "WireGuard" not in (
-                    await conn.create_process(QUERY_CMD).execute()
-                ).get_stdout()
-            ):
+            # Check if libtelio left hanging wg-nt adapter on one of our GUIDs
+            orphan_slots = await used_guid_slots(conn, adapter_name)
+            if not orphan_slots:
                 log.info(
                     "No orphaned adapter found after dirty shutdown iteration %d", i
                 )
                 continue
+            log.info("Orphaned adapter left on GUID slots %s", orphan_slots)
 
-        # Try to start libtelio and see if it properly cleans up orphaned wg-nt adapter
-        async with AsyncExitStack() as exit_stack:
-            env = await exit_stack.enter_async_context(
-                setup_environment(
-                    exit_stack,
-                    [
-                        SetupParameters(
-                            connection_tag=conn_tag,
-                            adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
-                        )
-                    ],
-                )
+            # Start libtelio with the same name and check it cleans up the orphaned adapter
+            client = new_wg_nt_client(
+                conn, node, adapter_name, enable_guid_rotation=False
             )
-
-            conn, *_ = [conn.connection for conn in env.connections]
-            client, *_ = env.clients
-
-            assert (
-                "WireGuard" in (
-                    await conn.create_process(QUERY_CMD).execute()
-                ).get_stdout()
-            )
-            assert ORPHANED_ADAPTER_REMOVED_LOG in await client.log.get()
+            async with client.run():
+                assert PRIMARY_GUID_SLOT in await used_guid_slots(conn, adapter_name)
+                assert ORPHANED_ADAPTER_REMOVED_LOG in await client.log.get()
 
 
 def adapter_guid_for_slot(adapter_name: str, slot: int) -> str:
