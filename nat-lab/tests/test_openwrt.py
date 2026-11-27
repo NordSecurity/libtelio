@@ -16,7 +16,6 @@ from tests.config import (
 from tests.helpers import (
     print_network_state,
     wait_for_interface_state,
-    wait_for_log_line,
 )
 from tests.nordvpnlite import (
     NordVpnLite,
@@ -30,8 +29,9 @@ from tests.utils.connection import Connection, ConnectionTag
 from tests.utils.connection_util import new_connection_raw, new_connection_by_tag
 from tests.utils.logger import log
 from tests.utils.openwrt import (
-    start_logread_process,
+    router_uptime,
     wait_for_router_dns,
+    wait_for_wan_up,
     wait_until_unreachable_after_reboot,
 )
 from tests.utils.ping import ping
@@ -39,7 +39,6 @@ from tests.utils.process import ProcessExecError
 from typing import Optional
 from urllib.parse import urlparse
 
-NETWORK_RESTART_LOG_LINE = "netifd: Network device 'eth1' link is up"
 OPENWRT_GW_WAN_IP = {
     ConnectionTag.VM_OPENWRT_GW_1: "10.0.0.2",
     ConnectionTag.VM_OPENWRT_GW_3: "10.0.0.4",
@@ -297,10 +296,8 @@ async def test_openwrt_vpn_connection(
             await check_gateway_and_client_ip(
                 gateway_connection, client_connection, WG_SERVER["ipv4"], gw_tag
             )
-            logread_proc = await start_logread_process(
-                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
-            )
-        await wait_for_log_line(logread_proc)
+            not_before = await router_uptime(gateway_connection)
+        await wait_for_wan_up(gateway_connection, not_before=not_before)
         log.info("Network has been reloaded")
 
         # check if DHCP DNS nameservers were restored
@@ -401,10 +398,8 @@ async def test_openwrt_ip_leaks(
                     if ip in line
                 ]
                 assert not errors, "Next IPs were leaked:\n" + "\n".join(errors)
-            logread_proc = await start_logread_process(
-                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
-            )
-        await wait_for_log_line(logread_proc)
+            not_before = await router_uptime(gateway_connection)
+        await wait_for_wan_up(gateway_connection, not_before=not_before)
         log.info("Network has been reloaded")
 
 
@@ -557,10 +552,8 @@ async def test_openwrt_wan_replies_do_not_enter_tunnel(
             await check_gateway_and_client_ip(
                 gateway_connection, client_connection, WG_SERVER["ipv4"], gw_tag
             )
-            logread_proc = await start_logread_process(
-                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
-            )
-        await wait_for_log_line(logread_proc)
+            not_before = await router_uptime(gateway_connection)
+        await wait_for_wan_up(gateway_connection, not_before=not_before)
         log.info("Network has been reloaded")
 
 
@@ -614,10 +607,8 @@ async def test_openwrt_simulate_network_down(
             await check_gateway_and_client_ip(
                 gateway_connection, client_connection, WG_SERVER["ipv4"], gw_tag
             )
-            logread_proc = await start_logread_process(
-                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
-            )
-        await wait_for_log_line(logread_proc)
+            not_before = await router_uptime(gateway_connection)
+        await wait_for_wan_up(gateway_connection, not_before=not_before)
         log.info("Network has been reloaded")
 
 
@@ -660,10 +651,8 @@ async def test_openwrt_vpn_reconnect(
             await check_gateway_and_client_ip(
                 gateway_connection, client_connection, WG_SERVER["ipv4"], gw_tag
             )
-            logread_proc = await start_logread_process(
-                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
-            )
-        await wait_for_log_line(logread_proc)
+            not_before = await router_uptime(gateway_connection)
+        await wait_for_wan_up(gateway_connection, not_before=not_before)
         log.info("Network has been reloaded")
 
         log.debug("Check connection after disconnect from vpn")
@@ -677,10 +666,8 @@ async def test_openwrt_vpn_reconnect(
             await check_gateway_and_client_ip(
                 gateway_connection, client_connection, WG_SERVER["ipv4"], gw_tag
             )
-            logread_proc = await start_logread_process(
-                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
-            )
-        await wait_for_log_line(logread_proc)
+            not_before = await router_uptime(gateway_connection)
+        await wait_for_wan_up(gateway_connection, not_before=not_before)
         log.info("Network has been reloaded")
 
 
@@ -723,10 +710,8 @@ async def test_openwrt_vpn_reconnect_different_country(
             await check_gateway_and_client_ip(
                 gateway_connection, client_connection, WG_SERVER["ipv4"], gw_tag
             )
-            logread_proc = await start_logread_process(
-                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
-            )
-        await wait_for_log_line(logread_proc)
+            not_before = await router_uptime(gateway_connection)
+        await wait_for_wan_up(gateway_connection, not_before=not_before)
         log.info("Network has been reloaded")
 
         log.debug("Check connection after disconnect from vpn")
@@ -750,10 +735,8 @@ async def test_openwrt_vpn_reconnect_different_country(
             await check_gateway_and_client_ip(
                 gateway_connection, client_connection, WG_SERVER_2["ipv4"], gw_tag
             )
-            logread_proc = await start_logread_process(
-                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
-            )
-        await wait_for_log_line(logread_proc)
+            not_before = await router_uptime(gateway_connection)
+        await wait_for_wan_up(gateway_connection, not_before=not_before)
         log.info("Network has been reloaded")
 
 
@@ -865,15 +848,15 @@ async def test_openwrt_router_restart(
                 gw_tag,
             )
         finally:
-            logread_proc = await start_logread_process(
-                gateway_connection_after_reboot, exit_stack, NETWORK_RESTART_LOG_LINE
-            )
             log.info("Stop nordvpnlite with init script to disable auto reconnect")
+            not_before = await router_uptime(gateway_connection_after_reboot)
             await gateway_connection_after_reboot.create_process(
                 ["/etc/init.d/nordvpnlite", "stop"]
             ).execute()
             await nordvpnlite_after_reboot.clean_up()
-            await wait_for_log_line(logread_proc)
+            await wait_for_wan_up(
+                gateway_connection_after_reboot, not_before=not_before
+            )
             log.info("Network has been reloaded")
 
 
@@ -971,10 +954,8 @@ async def test_openwrt_dhcp_client_gets_vpn_mtu(
                 f" expected 1420, got {connected_mtu}"
             )
 
-            logread_proc = await start_logread_process(
-                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
-            )
-        await wait_for_log_line(logread_proc)
+            not_before = await router_uptime(gateway_connection)
+        await wait_for_wan_up(gateway_connection, not_before=not_before)
         log.info("Network has been reloaded")
 
         # After disconnect, the option is no longer advertised -> client returns to 1500.
@@ -1057,10 +1038,8 @@ async def test_openwrt_dhcp_client_restores_existing_mtu(
                 f" expected 1420, got {connected_mtu}"
             )
 
-            logread_proc = await start_logread_process(
-                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
-            )
-        await wait_for_log_line(logread_proc)
+            not_before = await router_uptime(gateway_connection)
+        await wait_for_wan_up(gateway_connection, not_before=not_before)
         log.info("Network has been reloaded")
 
         # After disconnect, the gateway's original option 26 must be restored.
@@ -1137,10 +1116,9 @@ async def test_openwrt_dhcp_client_mtu_derived_from_wan(
                 f"Advertised MTU must be derived from the {wan_mtu} WAN interface as"
                 f" {expected_client_mtu} (wan - 80), got {connected_mtu}"
             )
-            logread_proc = await start_logread_process(
-                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
-            )
-        await wait_for_log_line(logread_proc)
+
+            not_before = await router_uptime(gateway_connection)
+        await wait_for_wan_up(gateway_connection, not_before=not_before)
 
 
 async def uci_get(connection: Connection, option: str, state: bool = False) -> str:
@@ -1224,10 +1202,9 @@ async def test_openwrt_dnsmasq_changes_not_committed(
             )
             assert "option:mtu,1420" in state_dhcp_options.split()
 
-            logread_proc = await start_logread_process(
-                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
-            )
-        await wait_for_log_line(logread_proc)
+            not_before = await router_uptime(gateway_connection)
+
+        await wait_for_wan_up(gateway_connection, not_before=not_before)
         log.info("Network has been reloaded")
 
         assert await dhcp_config_checksum(gateway_connection) == dhcp_checksum
