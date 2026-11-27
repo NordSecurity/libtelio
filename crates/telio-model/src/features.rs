@@ -478,7 +478,7 @@ impl FeatureFirewall {
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeaturePostQuantumVPN {
     /// Initial handshake retry interval in seconds
-    #[default = 8]
+    #[default = 7]
     pub handshake_retry_interval_s: u32,
 
     /// Rekey interval in seconds

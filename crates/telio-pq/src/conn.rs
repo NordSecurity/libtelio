@@ -12,6 +12,8 @@ use telio_utils::{telio_log_debug, telio_log_warn, SuspendAwareTicker};
 
 use crate::proto;
 
+const JITTER_RANGE: tokio::time::Duration = tokio::time::Duration::from_secs(1);
+
 pub struct ConnKeyRotation {
     task: JoinHandle<()>,
 }
@@ -82,7 +84,11 @@ impl ConnKeyRotation {
                 .await;
 
             telio_log_debug!("Rekey interval: {}s", rekey_interval.as_secs());
-            let mut ticker = SuspendAwareTicker::new_after(rekey_interval, rekey_interval);
+            let mut ticker = SuspendAwareTicker::new_after_with_jitter(
+                rekey_interval,
+                rekey_interval,
+                JITTER_RANGE,
+            );
             // After a failed rekey, retries are triggered by `ticker` in both modes
             let mut retrying = false;
 
@@ -139,7 +145,7 @@ impl ConnKeyRotation {
                             "Failed to perform PQ rekey: TIMEOUT({}s)",
                             request_retry.as_secs()
                         );
-                        ticker.reset_immediately();
+                        ticker.reset_after(tokio::time::Duration::ZERO);
                         retrying = true;
                     }
                 }
