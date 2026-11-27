@@ -1,0 +1,4 @@
+*
+!bin
+!data/custom_debs
+**/__pycache__
