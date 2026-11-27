@@ -88,41 +88,35 @@ impl crate::PostQuantum for Entity {
 
 async fn filter(
     pq_peer: Arc<Mutex<Option<Peer>>>,
-    mut last_handshake_times: tokio::sync::watch::Receiver<
+    mut last_handshake_ages: tokio::sync::watch::Receiver<
         HashMap<telio_model::PublicKey, Option<Duration>>,
     >,
     threshold: Duration,
     rekey_notify: Arc<tokio::sync::Notify>,
 ) {
     let mut last_below = true;
-    telio_log_debug!("XXX waiting for last handshake times updates");
+
     loop {
-        if last_handshake_times.changed().await.is_err() {
+        if last_handshake_ages.changed().await.is_err() {
             telio_log_debug!("WireGuard handshake times channel closed, stopping PQ rekey trigger");
             break;
         }
-        let times: HashMap<_, _> = last_handshake_times.borrow().clone();
+        let ages: HashMap<_, _> = last_handshake_ages.borrow().clone();
         let pq_pubkey = pq_peer.lock().as_ref().map(|p| p.pubkey);
-        telio_log_debug!("XXX for {pq_pubkey:?} received new last handshake times: {times:?}");
 
-        for (pk, d) in times {
+        for (pk, age) in ages {
             if Some(pk) == pq_pubkey {
-                telio_log_debug!("XXX pq_peer: {pk} -> {d:?}");
-                if let Some(d) = d {
+                if let Some(age) = age {
                     if let Some(peer) = pq_peer.lock().as_mut().filter(|p| p.pubkey == pk) {
-                        peer.on_wg_handshake_age(d);
+                        peer.on_wg_handshake_age(age);
                     }
-                    if d > threshold {
+                    if age > threshold {
                         if last_below {
-                            telio_log_debug!("XXX start PQ rekey!");
                             rekey_notify.notify_waiters();
-                        } else {
-                            telio_log_debug!("XXX subsequent to be ignored");
                         }
                         last_below = false
                     }
-                    if d <= threshold && !last_below {
-                        telio_log_debug!("XXX there was a WG handshake in between?");
+                    if age <= threshold && !last_below {
                         last_below = true;
                     }
                 }
@@ -136,7 +130,7 @@ impl Entity {
         features: FeaturePostQuantumVPN,
         sockets: Arc<telio_sockets::SocketPool>,
         chan: chan::Tx<super::Event>,
-        last_handshake_times: tokio::sync::watch::Receiver<
+        last_handshake_ages: tokio::sync::watch::Receiver<
             HashMap<telio_model::PublicKey, Option<Duration>>,
         >,
     ) -> Self {
@@ -145,7 +139,7 @@ impl Entity {
         let rekey_trigger_task = features.rekey_attached_to_wg_handshake.then(|| {
             tokio::spawn(filter(
                 peer.clone(),
-                last_handshake_times,
+                last_handshake_ages,
                 Duration::from_secs(features.rekey_interval_s.into()),
                 rekey_event.clone(),
             ))

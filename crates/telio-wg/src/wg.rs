@@ -149,9 +149,8 @@ pub struct Io {
     pub libtelio_wide_event_publisher: Option<mc_chan::Tx<Box<LibtelioEvent>>>,
     /// Channel to report WireGuard listen port changes
     pub listen_port_events: Tx<Option<u16>>,
-
-    /// todo
-    pub last_handshake_times: tokio::sync::watch::Sender<HashMap<PublicKey, Option<Duration>>>,
+    /// WG handshake ages for all peers
+    pub last_handshake_ages: tokio::sync::watch::Sender<HashMap<PublicKey, Option<Duration>>>,
 }
 
 /// Keepalive packets size
@@ -169,7 +168,7 @@ struct State {
     interface: Interface,
     event: Tx<Box<Event>>,
     listen_port_event: Tx<Option<u16>>,
-    last_handshake_times_event: tokio::sync::watch::Sender<HashMap<PublicKey, Option<Duration>>>,
+    last_handshake_ages_event: tokio::sync::watch::Sender<HashMap<PublicKey, Option<Duration>>>,
     analytics_tx: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
     // Detecting unexpected driver failures, such as a malicious removal
     // We won't be notified of any errors, but a periodic call to get_config_uapi() will return a Win32 error code != 0.
@@ -249,7 +248,7 @@ impl DynamicWg {
     ///             analytics_tx: None,
     ///             libtelio_wide_event_publisher: None,
     ///             listen_port_events: Chan::default().tx,
-    ///             last_handshake_times: tokio::sync::watch::channel(Default::default()).0,
+    ///             last_handshake_ages: tokio::sync::watch::channel(Default::default()).0,
     ///         },
     ///         Config {
     ///             adapter: AdapterType::default(),
@@ -325,7 +324,7 @@ impl DynamicWg {
                 interface: Default::default(),
                 event: io.events,
                 listen_port_event: io.listen_port_events,
-                last_handshake_times_event: io.last_handshake_times,
+                last_handshake_ages_event: io.last_handshake_ages,
                 analytics_tx: io.analytics_tx,
                 link_detection,
                 uapi_fail_counter: 0,
@@ -895,8 +894,7 @@ impl State {
             handshake_times.insert(*pk, peer.time_since_last_handshake);
         }
 
-        telio_log_debug!("XXX sending new last_handshake_times event: {handshake_times:?}");
-        self.last_handshake_times_event.send_if_modified(|current| {
+        self.last_handshake_ages_event.send_if_modified(|current| {
             let ret = *current != handshake_times;
             if ret {
                 *current = handshake_times;
@@ -1262,7 +1260,7 @@ pub mod tests {
                 })
             });
 
-        let (last_handshake_times_tx, _last_handshake_times_rx) =
+        let (last_handshake_ages_tx, _last_handshake_ages_rx) =
             tokio::sync::watch::channel(Default::default());
 
         let wg = DynamicWg::start_with(
@@ -1271,7 +1269,7 @@ pub mod tests {
                 analytics_tx: analytics_ch.clone(),
                 libtelio_wide_event_publisher: None,
                 listen_port_events: listen_port_ch.tx,
-                last_handshake_times: last_handshake_times_tx,
+                last_handshake_ages: last_handshake_ages_tx,
             },
             Box::new(adapter.clone()),
             None,
@@ -1501,7 +1499,7 @@ pub mod tests {
             analytics_tx: None,
             libtelio_wide_event_publisher: None,
             listen_port_events: Chan::default().tx,
-            last_handshake_times: tokio::sync::watch::channel(Default::default()).0,
+            last_handshake_ages: tokio::sync::watch::channel(Default::default()).0,
         };
         let result = DynamicWg::start(
             io,

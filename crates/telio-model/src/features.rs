@@ -878,7 +878,6 @@ mod tests {
                     post_quantum_vpn: FeaturePostQuantumVPN {
                         handshake_retry_interval_s: 15,
                         rekey_interval_s: 16,
-                        rekey_attached_to_wg_handshake: false,
                         version: 1,
                         rekey_attached_to_wg_handshake: true,
                     },
