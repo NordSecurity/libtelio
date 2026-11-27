@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use parking_lot::Mutex;
+use tokio::task::JoinHandle;
 
 use telio_model::features::FeaturePostQuantumVPN;
 use telio_task::io::chan;
@@ -63,6 +64,16 @@ pub struct Entity {
     chan: chan::Tx<super::Event>,
     peer: Arc<Mutex<Option<Peer>>>,
     rekey_event: Arc<tokio::sync::Notify>,
+    /// Starts PQ rekeys after WireGuard handshakes, with `rekey_attached_to_wg_handshake`
+    rekey_trigger_task: Option<JoinHandle<()>>,
+}
+
+impl Drop for Entity {
+    fn drop(&mut self) {
+        if let Some(task) = &self.rekey_trigger_task {
+            task.abort();
+        }
+    }
 }
 
 impl crate::PostQuantum for Entity {
@@ -86,7 +97,10 @@ async fn filter(
     let mut last_below = true;
     telio_log_debug!("XXX waiting for last handshake times updates");
     loop {
-        last_handshake_times.changed().await.unwrap();
+        if last_handshake_times.changed().await.is_err() {
+            telio_log_debug!("WireGuard handshake times channel closed, stopping PQ rekey trigger");
+            break;
+        }
         let times: HashMap<_, _> = last_handshake_times.borrow().clone();
         let pq_pubkey = pq_peer.lock().as_ref().map(|p| p.pubkey);
         telio_log_debug!("XXX for {pq_pubkey:?} received new last handshake times: {times:?}");
@@ -128,20 +142,21 @@ impl Entity {
     ) -> Self {
         let peer = Arc::new(Mutex::new(None));
         let rekey_event = Arc::new(tokio::sync::Notify::new());
-        if features.rekey_attached_to_wg_handshake {
-            let _ = tokio::spawn(filter(
+        let rekey_trigger_task = features.rekey_attached_to_wg_handshake.then(|| {
+            tokio::spawn(filter(
                 peer.clone(),
                 last_handshake_times,
                 Duration::from_secs(features.rekey_interval_s.into()),
                 rekey_event.clone(),
-            ));
-        }
+            ))
+        });
         Self {
             features,
             sockets,
             chan,
             peer,
             rekey_event,
+            rekey_trigger_task,
         }
     }
 

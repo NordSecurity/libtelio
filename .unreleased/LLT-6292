@@ -1,0 +1,1 @@
+Add `post_quantum_vpn.rekey_attached_to_wg_handshake` feature flag: start PQ rekeys `rekey_interval_s` after the last WireGuard handshake and restart the PQ session 180s after the first WireGuard handshake following the last PQ key exchange (RFC LLT-0120)

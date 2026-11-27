@@ -1340,6 +1340,8 @@ impl Runtime {
                 let wg_events = wg_events.rx;
                 let wg_listen_port_events = wg_listen_port_events.rx;
             } else {
+                // wg::tests::setup() wires its own handshake times channel.
+                drop(last_handshake_times_tx);
                 let wg::tests::Env {
                         event: wg_events,
                         listen_port_event: wg_listen_port_events,

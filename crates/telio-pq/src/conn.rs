@@ -17,6 +17,7 @@ pub struct ConnKeyRotation {
 }
 
 impl ConnKeyRotation {
+    #[allow(clippy::too_many_arguments)]
     pub fn run(
         chan: chan::Tx<super::Event>,
         socket_pool: Arc<telio_sockets::SocketPool>,
@@ -82,8 +83,7 @@ impl ConnKeyRotation {
 
             telio_log_debug!("Rekey interval: {}s", rekey_interval.as_secs());
             let mut ticker = SuspendAwareTicker::new_after(rekey_interval, rekey_interval);
-            // After a failed rekey, retries are driven by `ticker` in both modes until a
-            // rekey succeeds; only then does the WG-handshake trigger take over again.
+            // After a failed rekey, retries are triggered by `ticker` in both modes
             let mut retrying = false;
 
             loop {
@@ -92,8 +92,6 @@ impl ConnKeyRotation {
                 } else {
                     ticker.tick().await;
                 }
-
-                telio_log_debug!("XXX will fetch keys");
 
                 // Dylint is unhappy about the `rekey` future size
                 // and asks for using `Box::pin` to move it on the heap

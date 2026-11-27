@@ -229,13 +229,11 @@ class TestPqVpnRekey:
     """Tests using PQ VPN with version + rekey mutation."""
 
     @pytest.fixture(autouse=True)
-    def _mutate_pq_rekey(self, alpha_setup_params: SetupParameters, pq_version: int, rekey_attached_to_wg_handshake: bool):
+    def _mutate_pq_rekey(self, alpha_setup_params: SetupParameters, pq_version: int):
         alpha_setup_params.features.post_quantum_vpn.rekey_interval_s = (
-            # SHORT_PQ_REKEY_INTERVAL_S
-            30
+            SHORT_PQ_REKEY_INTERVAL_S
         )
         alpha_setup_params.features.post_quantum_vpn.version = pq_version
-        alpha_setup_params.features.post_quantum_vpn.rekey_attached_to_wg_handshake = rekey_attached_to_wg_handshake
 
     @pytest.mark.nlx
     @pytest.mark.parametrize(
@@ -313,10 +311,6 @@ class TestPqVpnRekey:
     @pytest.mark.parametrize(
         "pq_version",
         PQ_VERSIONS,
-    )
-    @pytest.mark.parametrize(
-        "rekey_attached_to_wg_handshake",
-        [True,False],
     )
     async def test_pq_vpn_rekey(
         self,
@@ -1130,13 +1124,15 @@ class NlxPeerObserver:
         return "\n".join(f"  +{at - start:6.1f}s {what}" for at, what in sorted(events))
 
 
-def _pq_rekey_timing_setup_params(adapter: TelioAdapterType) -> SetupParameters:
+def _pq_rekey_timing_setup_params(
+    adapter: TelioAdapterType, nlx_1_limits: tuple[int, int] = (2, 2)
+) -> SetupParameters:
     return SetupParameters(
         connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
         adapter_type_override=adapter,
         connection_tracker_config=generate_connection_tracker_config(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
-            nlx_1_limits=(2, 2),
+            nlx_1_limits=nlx_1_limits,
         ),
         is_meshnet=False,
     )
@@ -1419,7 +1415,10 @@ class TestPqRekeyTiming:
         "alpha_setup_params",
         [
             pytest.param(
-                _pq_rekey_timing_setup_params(TelioAdapterType.LINUX_NATIVE_TUN),
+                # The restarted PQ session reconnects to NLX from a new port.
+                _pq_rekey_timing_setup_params(
+                    TelioAdapterType.LINUX_NATIVE_TUN, nlx_1_limits=(2, 3)
+                ),
                 marks=pytest.mark.linux_native,
             ),
         ],

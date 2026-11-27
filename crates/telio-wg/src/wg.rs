@@ -249,6 +249,7 @@ impl DynamicWg {
     ///             analytics_tx: None,
     ///             libtelio_wide_event_publisher: None,
     ///             listen_port_events: Chan::default().tx,
+    ///             last_handshake_times: tokio::sync::watch::channel(Default::default()).0,
     ///         },
     ///         Config {
     ///             adapter: AdapterType::default(),
@@ -1261,7 +1262,7 @@ pub mod tests {
                 })
             });
 
-        let (last_handshake_times_tx, last_handshake_times_rx) =
+        let (last_handshake_times_tx, _last_handshake_times_rx) =
             tokio::sync::watch::channel(Default::default());
 
         let wg = DynamicWg::start_with(
