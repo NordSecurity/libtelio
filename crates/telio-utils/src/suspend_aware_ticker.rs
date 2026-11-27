@@ -15,6 +15,7 @@ pub struct SuspendAwareTicker {
     period: tokio::time::Duration,
     /// The wall-clock deadline for the next tick, measured with a suspend-aware clock.
     next: crate::Instant,
+    jitter_range: tokio::time::Duration,
 }
 
 impl SuspendAwareTicker {
@@ -25,25 +26,44 @@ impl SuspendAwareTicker {
 
     /// Create a new ticker with a given period where the first tick is `offset` time from now
     pub fn new_after(offset: tokio::time::Duration, period: tokio::time::Duration) -> Self {
+        Self::new_after_with_jitter(offset, period, tokio::time::Duration::ZERO)
+    }
+
+    /// Create a new ticker with a given period where the first tick is `offset` time from now and
+    /// subsequent ticks will include random jitter below the `jitter_range`.
+    pub fn new_after_with_jitter(
+        offset: tokio::time::Duration,
+        period: tokio::time::Duration,
+        jitter_range: tokio::time::Duration,
+    ) -> Self {
         Self {
             period,
             next: crate::Instant::now() + offset,
+            jitter_range,
         }
     }
 
-    /// Wait until the next tick, then advance the deadline
+    /// Wait until the next tick, then advance the deadline by period with random jitter
     pub async fn tick(&mut self) {
         crate::sleep_until(self.next).await;
-        self.next = crate::Instant::now() + self.period;
+        let jitter = self.next_jitter();
+        self.next = crate::Instant::now() + self.period + jitter;
     }
 
-    /// Reset the ticker so the next tick happens `offset` time from now
+    /// Reset the ticker so the next tick happens at `offset` + random jitter time from now
     pub fn reset_after(&mut self, offset: tokio::time::Duration) {
-        self.next = crate::Instant::now() + offset;
+        let jitter = self.next_jitter();
+        self.next = crate::Instant::now() + offset + jitter;
     }
 
     /// Reset the ticker so the next tick happens immediately
     pub fn reset_immediately(&mut self) {
         self.next = crate::Instant::now();
+    }
+
+    fn next_jitter(&self) -> tokio::time::Duration {
+        tokio::time::Duration::from_secs_f32(
+            self.jitter_range.as_secs_f32() * rand::random::<f32>(),
+        )
     }
 }

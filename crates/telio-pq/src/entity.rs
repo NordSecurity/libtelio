@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use parking_lot::Mutex;
+use tokio::task::JoinHandle;
 
 use telio_model::features::FeaturePostQuantumVPN;
 use telio_task::io::chan;
@@ -22,13 +24,56 @@ struct Peer {
     _rotation_task: super::conn::ConnKeyRotation,
     keys: Option<super::Keys>,
     last_key_fetch_ts: Option<SystemTime>,
+    /// First WireGuard handshake completed after `last_key_fetch_ts`.
+    /// Tracked only with `rekey_attached_to_wg_handshake`.
+    first_wg_handshake_ts: Option<SystemTime>,
+}
+
+impl Peer {
+    fn on_key_exchange(&mut self) {
+        self.last_key_fetch_ts = Some(SystemTime::now());
+        self.first_wg_handshake_ts = None;
+    }
+
+    fn on_wg_handshake_age(&mut self, age: Duration) {
+        if self.first_wg_handshake_ts.is_some() {
+            return;
+        }
+        let (Some(key_exchange), Some(handshake)) =
+            (self.last_key_fetch_ts, SystemTime::now().checked_sub(age))
+        else {
+            return;
+        };
+        if handshake >= key_exchange {
+            self.first_wg_handshake_ts = Some(handshake);
+        }
+    }
+
+    /// Start of the session that must get a PQ rekey within `REJECT_AFTER_TIME`.
+    ///
+    /// With kernel WireGuard a PSK change does not force a handshake, so the session
+    /// keyed with the last fetched PSK starts only at the next WireGuard handshake.
+    fn session_start_ts(&self) -> Option<SystemTime> {
+        self.first_wg_handshake_ts.or(self.last_key_fetch_ts)
+    }
 }
 
 pub struct Entity {
     features: FeaturePostQuantumVPN,
     sockets: Arc<telio_sockets::SocketPool>,
     chan: chan::Tx<super::Event>,
-    peer: Mutex<Option<Peer>>,
+    peer: Arc<Mutex<Option<Peer>>>,
+    rekey_event: Arc<tokio::sync::Notify>,
+    /// Starts PQ rekeys after WireGuard handshakes, with `rekey_attached_to_wg_handshake`
+    rekey_trigger_task: Option<JoinHandle<()>>,
+}
+
+impl Drop for Entity {
+    fn drop(&mut self) {
+        if let Some(task) = &self.rekey_trigger_task {
+            task.abort();
+        }
+    }
 }
 
 impl crate::PostQuantum for Entity {
@@ -41,17 +86,71 @@ impl crate::PostQuantum for Entity {
     }
 }
 
+async fn filter(
+    pq_peer: Arc<Mutex<Option<Peer>>>,
+    mut last_handshake_ages: tokio::sync::watch::Receiver<
+        HashMap<telio_model::PublicKey, Option<Duration>>,
+    >,
+    threshold: Duration,
+    rekey_notify: Arc<tokio::sync::Notify>,
+) {
+    let mut last_below = true;
+
+    loop {
+        if last_handshake_ages.changed().await.is_err() {
+            telio_log_debug!("WireGuard handshake times channel closed, stopping PQ rekey trigger");
+            break;
+        }
+        let ages: HashMap<_, _> = last_handshake_ages.borrow().clone();
+        let pq_pubkey = pq_peer.lock().as_ref().map(|p| p.pubkey);
+
+        for (pk, age) in ages {
+            if Some(pk) == pq_pubkey {
+                if let Some(age) = age {
+                    if let Some(peer) = pq_peer.lock().as_mut().filter(|p| p.pubkey == pk) {
+                        peer.on_wg_handshake_age(age);
+                    }
+                    if age > threshold {
+                        if last_below {
+                            rekey_notify.notify_waiters();
+                        }
+                        last_below = false
+                    }
+                    if age <= threshold && !last_below {
+                        last_below = true;
+                    }
+                }
+            }
+        }
+    }
+}
+
 impl Entity {
     pub fn new(
         features: FeaturePostQuantumVPN,
         sockets: Arc<telio_sockets::SocketPool>,
         chan: chan::Tx<super::Event>,
+        last_handshake_ages: tokio::sync::watch::Receiver<
+            HashMap<telio_model::PublicKey, Option<Duration>>,
+        >,
     ) -> Self {
+        let peer = Arc::new(Mutex::new(None));
+        let rekey_event = Arc::new(tokio::sync::Notify::new());
+        let rekey_trigger_task = features.rekey_attached_to_wg_handshake.then(|| {
+            tokio::spawn(filter(
+                peer.clone(),
+                last_handshake_ages,
+                Duration::from_secs(features.rekey_interval_s.into()),
+                rekey_event.clone(),
+            ))
+        });
         Self {
             features,
             sockets,
             chan,
-            peer: Mutex::new(None),
+            peer,
+            rekey_event,
+            rekey_trigger_task,
         }
     }
 
@@ -61,7 +160,7 @@ impl Entity {
                 super::Event::KeyFetch(addr, keys) => {
                     if peer.addr == addr {
                         peer.keys = Some(keys);
-                        peer.last_key_fetch_ts = Some(SystemTime::now());
+                        peer.on_key_exchange();
                     }
                 }
                 super::Event::Rekey(super::Keys {
@@ -75,7 +174,7 @@ impl Entity {
                             // otherwise we're connecting to different node already
                             keys.pq_shared = pq_shared;
                             // Keys are also fetched during rekey
-                            peer.last_key_fetch_ts = Some(SystemTime::now());
+                            peer.on_key_exchange();
                         } else {
                             telio_log_debug!(
                                 "PQ secret key does not match, ignoring shared secret rotation"
@@ -139,6 +238,7 @@ impl Entity {
                 p.pubkey,
                 &self.features,
                 p.pq_upgrader_ip,
+                self.rekey_event.clone(),
             );
         }
     }
@@ -158,12 +258,14 @@ impl Entity {
     // would return a negative value. The error returned contains the absolute value of the time difference.
     // We ignore values smaller than 5 seconds (chosen arbitrarily) because SystemTime does not guarantee monotonicity,
     // so it is possible that ts.elapsed() returns a small negative value when called shortly after ts was saved.
+    // With `rekey_attached_to_wg_handshake` the timeout runs from the first WireGuard handshake after the last
+    // key exchange (RFC LLT-0120 session termination), see `Peer::session_start_ts`.
     pub async fn maybe_restart(&self) {
         let peer = {
             let mut peer = self.peer.lock();
             let should_restart = peer
                 .as_ref()
-                .and_then(|peer| peer.last_key_fetch_ts)
+                .and_then(Peer::session_start_ts)
                 .is_some_and(|ts| match ts.elapsed() {
                     Ok(dur) => dur > REJECT_AFTER_TIME,
                     Err(err) => err.duration() > Duration::from_secs(5),
@@ -202,9 +304,11 @@ impl Entity {
                 peer,
                 &self.features,
                 pq_upgrader_ip,
+                self.rekey_event.clone(),
             ),
             keys: None,
             last_key_fetch_ts: None,
+            first_wg_handshake_ts: None,
         });
 
         #[allow(mpsc_blocking_send)]

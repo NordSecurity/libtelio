@@ -12,11 +12,14 @@ use telio_utils::{telio_log_debug, telio_log_warn, SuspendAwareTicker};
 
 use crate::proto;
 
+const JITTER_RANGE: tokio::time::Duration = tokio::time::Duration::from_secs(1);
+
 pub struct ConnKeyRotation {
     task: JoinHandle<()>,
 }
 
 impl ConnKeyRotation {
+    #[allow(clippy::too_many_arguments)]
     pub fn run(
         chan: chan::Tx<super::Event>,
         socket_pool: Arc<telio_sockets::SocketPool>,
@@ -25,9 +28,11 @@ impl ConnKeyRotation {
         peer: telio_crypto::PublicKey,
         features: &FeaturePostQuantumVPN,
         pq_upgrader_ip: Option<Ipv4Addr>,
+        rekey_event: Arc<tokio::sync::Notify>,
     ) -> Self {
         telio_log_debug!("Starting PQ task");
 
+        let rekey_attached_to_wg_handshake = features.rekey_attached_to_wg_handshake;
         let mut rekey_interval = features.rekey_interval_s;
         if rekey_interval == 0 {
             rekey_interval = 1;
@@ -79,10 +84,20 @@ impl ConnKeyRotation {
                 .await;
 
             telio_log_debug!("Rekey interval: {}s", rekey_interval.as_secs());
-            let mut ticker = SuspendAwareTicker::new_after(rekey_interval, rekey_interval);
+            let mut ticker = SuspendAwareTicker::new_after_with_jitter(
+                rekey_interval,
+                rekey_interval,
+                JITTER_RANGE,
+            );
+            // After a failed rekey, retries are triggered by `ticker` in both modes
+            let mut retrying = false;
 
             loop {
-                ticker.tick().await;
+                if rekey_attached_to_wg_handshake && !retrying {
+                    rekey_event.notified().await;
+                } else {
+                    ticker.tick().await;
+                }
 
                 // Dylint is unhappy about the `rekey` future size
                 // and asks for using `Box::pin` to move it on the heap
@@ -111,6 +126,7 @@ impl ConnKeyRotation {
                 match tokio::time::timeout(request_retry, rekey).await {
                     Ok(Ok(key)) => {
                         telio_log_debug!("Successful PQ REKEY");
+                        retrying = false;
                         wg_keys.pq_shared = key.clone();
 
                         // The channel is allways open during the library operation.
@@ -122,13 +138,15 @@ impl ConnKeyRotation {
                     Ok(Err(err)) => {
                         telio_log_warn!("Failed to perform PQ rekey: {err}");
                         ticker.reset_after(request_retry);
+                        retrying = true;
                     }
                     Err(_timeout) => {
                         telio_log_warn!(
                             "Failed to perform PQ rekey: TIMEOUT({}s)",
                             request_retry.as_secs()
                         );
-                        ticker.reset_immediately();
+                        ticker.reset_after(tokio::time::Duration::ZERO);
+                        retrying = true;
                     }
                 }
             }
